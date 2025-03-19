@@ -1,6 +1,8 @@
 #Requires AutoHotkey v2.1-alpha.16
 #SingleInstance Force
 
+; It's CPP for the highlighting
+
 global DarkColors := Map(
     "Background", 0x171717, 
     "Controls", 0x202020, 
