@@ -1,7 +1,7 @@
 #Requires AutoHotkey v2.1-alpha.16
 #SingleInstance Force
 
-; It's CPP for the highlighting
+Hey := "Its CPP for the highlighting"
 
 global DarkColors := Map(
     "Background", 0x171717, 
