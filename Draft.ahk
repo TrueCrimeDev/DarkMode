@@ -1,457 +1,588 @@
 #Requires AutoHotkey v2.1-alpha.16
 #SingleInstance Force
 
-global DarkColors := Map(
-    "Background", 0x171717, 
-    "Controls", 0x202020, 
-    "Font", 0xFFFFFF
-)
+EnhancedDarkApp()
 
-DemoApp()
-
-class DemoApp {
+class EnhancedDarkApp {
     __New() {
-        this.settings := Map(
-            "RadialMenu", Map(
-                "HotKey1", "!Capslock",
-                "HotKey2", "#Capslock",
-                "EnableAdvanced", true
-            ),
-            "Interface", Map(
-                "DarkMode", true,
-                "Language", "English"
-            )
-        )
-        
-        this.CreateGui()
+        this.InitializeGui()
         this.SetupControls()
         this.gui.Show()
     }
-    
-    CreateGui() {
-        Gui.Prototype.DefineProp("AddDarkCheckBox", {Call: AddDarkCheckBox})
-        
-        this.gui := Gui("+Resize +AlwaysOnTop", "Task Manager")
+
+    InitializeGui() {
+        this.gui := Gui("+Resize", "Enhanced Dark Mode Demo")
         this.gui.SetFont("s10", "Segoe UI")
-        
-        this.gui.AddText("y15 x15", "Name:")
-        this.nameEdit := this.gui.AddEdit("w300 x15")
-        
-        this.gui.AddText("y+10 x15", "Priority:")
-        this.priority := this.gui.AddDropDownList("w300 Choose1", ["High", "Medium", "Low"])
-        
-        this.gui.AddText("y+20 x15 w300", "Hotkey Configuration")
-        this.gui.AddText("y+10 x15", "Radial Menu 1:")
-        this.radialHK1 := this.gui.AddComboBox("w300 x15", 
-            ["!Capslock", "#Capslock", "^Capslock", "+Capslock", "!Space", "^Space"])
-        
-        this.gui.AddText("y+10 x15", "Radial Menu 2:")
-        this.radialHK2 := this.gui.AddComboBox("w300 x15", 
-            ["#Capslock", "!Capslock", "^Capslock", "+Capslock", "!Space", "^Space"])
-        
-        this.showComplete := this.gui.AddDarkCheckBox("y+15 x15 w300", "Show completed tasks")
-        this.enableAdvanced := this.gui.AddDarkCheckBox("y+10 x15 w300", "Enable advanced features")
-        
-        this.gui.AddText("y+15 x15", "Language:")
-        this.language := this.gui.AddDropDownList("w300 x15 Choose1", ["English", "Dutch", "German", "French"])
-        
-        saveBtn := this.gui.AddButton("y+20 w145 x15", "Save")
-        clearBtn := this.gui.AddButton("x+10 w145", "Clear")
-        
-        this.listView := this.gui.AddListView("y+20 x15 w300 h200", ["Name", "Priority"])
-        
-        _Dark(this.gui)
-        
-        saveBtn.OnEvent("Click", this.SaveTask.Bind(this))
-        clearBtn.OnEvent("Click", this.ClearFields.Bind(this))
-        
-        this.SetupHotkeys()
+        this.darkMode := _Dark(this.gui)
+
+        this.darkMode.AddDarkText("y15 x15 w300", "Basic Controls")
+        this.darkCheckbox := this.darkMode.AddDarkCheckBox("y+10 x15 w250", "Enable feature")
+        this.darkListView := this.darkMode.AddListView("y+10 x15 w300 h120", ["Item", "Value"])
+        this.actionButton := this.darkMode.AddDarkButton("y+10 x15 w120", "Run Action")
+        this.darkEdit := this.darkMode.AddDarkEdit("y+10 x15 w200 h24", "Sample text input")
+        this.darkComboBox := this.darkMode.AddDarkComboBox("y+10 x15 w200", ["Option 1", "Option 2", "Option 3"])
+
+        this.darkMode.AddDarkText("y+20 x15 w300", "Advanced Controls")
+        this.darkGroupBox := this.darkMode.AddDarkGroupBox("y+10 x15 w300 h80", "Group Settings")
+        this.darkRadio1 := this.darkMode.AddDarkRadio("xp+15 yp+25 w250", "Option A")
+        this.darkRadio2 := this.darkMode.AddDarkRadio("xp y+10 w250", "Option B")
+
+        this.darkMode.AddDarkText("y+20 x15 w300", "Enhanced Controls")
+        this.darkSlider := this.darkMode.AddDarkSlider("y+10 x15 w200 h30 Range0-100", 50)
+        this.darkProgress := this.darkMode.AddDarkProgress("y+15 x15 w200 h20", 50)
+        this.darkDateTime := this.darkMode.AddDarkDateTime("y+15 x15 w200")
+        this.darkMonthCal := this.darkMode.AddDarkMonthCal("y+15 x15")
+        this.darkTabs := this.darkMode.AddDarkTab3("y+15 x15 w300 h150", ["Tab 1", "Tab 2", "Tab 3"])
+
+        this.gui.Tab := 1
+        this.darkMode.AddDarkText("y+10 x25 w280", "Content for Tab 1")
+        this.darkMode.AddDarkEdit("y+10 x25 w280 h80", "Tab 1 content area")
+
+        this.gui.Tab := 2
+        this.darkMode.AddDarkText("y+10 x25 w280", "Content for Tab 2")
+        this.darkMode.AddDarkButton("y+10 x25 w100", "Tab 2 Button")
+
+        this.gui.Tab := 3
+        this.darkMode.AddDarkText("y+10 x25 w280", "Content for Tab 3")
+        this.darkMode.AddDarkListBox("y+10 x25 w200 h80", ["List Item 1", "List Item 2", "List Item 3"])
+
+        this.gui.Tab := ""
+
+        this.darkMode.AddDarkText("y+20 x15 w300", "Theme Settings")
+        this.themeSelecter := this.darkMode.AddDarkComboBox("y+10 x15 w200", ["Dark Blue", "Dark Gray", "Dark Green", "Dark Purple"])
+            .OnEvent("Change", this.ThemeChanged.Bind(this))
+
+        this.actionButton.OnEvent("Click", this.ButtonClicked.Bind(this))
+        this.darkSlider.OnEvent("Change", this.SliderChanged.Bind(this))
     }
-    
+
+    ButtonClicked(*) {
+        MsgBox("Button clicked!")
+    }
+
+    SliderChanged(*) {
+        this.darkProgress.Value := this.darkSlider.Value
+    }
+
+    ThemeChanged(*) {
+        themeIndex := this.themeSelecter.Value
+        themes := Map(
+            "Dark Blue", Map("Background", 0x1A1A2E, "Controls", 0x16213E, "Font", 0xE0E0E0),
+            "Dark Gray", Map("Background", 0x171717, "Controls", 0x1E1E1E, "Font", 0xE0E0E0),
+            "Dark Green", Map("Background", 0x0A2A12, "Controls", 0x103619, "Font", 0xE0E0E0),
+            "Dark Purple", Map("Background", 0x240041, "Controls", 0x3C096C, "Font", 0xE0E0E0)
+        )
+
+        if themes.Has(themeIndex)
+            this.darkMode.SetTheme(themes[themeIndex])
+    }
+
     SetupControls() {
-        this.radialHK1.Text := this.settings["RadialMenu"]["HotKey1"]
-        this.radialHK2.Text := this.settings["RadialMenu"]["HotKey2"]
-        this.enableAdvanced.Value := this.settings["RadialMenu"]["EnableAdvanced"] ? 1 : 0
-        this.language.Choose(this.settings["Interface"]["Language"])
-        
-        this.radialHK1.OnEvent("Change", this.UpdateSettings.Bind(this))
-        this.radialHK2.OnEvent("Change", this.UpdateSettings.Bind(this))
-        this.enableAdvanced.OnEvent("Click", this.UpdateSettings.Bind(this))
-        this.language.OnEvent("Change", this.UpdateSettings.Bind(this))
-    }
-    
-    UpdateSettings(*) {
-        this.settings["RadialMenu"]["HotKey1"] := this.radialHK1.Text
-        this.settings["RadialMenu"]["HotKey2"] := this.radialHK2.Text
-        this.settings["RadialMenu"]["EnableAdvanced"] := this.enableAdvanced.Value = 1
-        this.settings["Interface"]["Language"] := this.language.Text
-        
-        ; Show a notification to demonstrate the change
-        ToolTip("Settings updated: " . this.radialHK1.Text . " / " . this.radialHK2.Text)
-        SetTimer () => ToolTip(), -2000
-    }
-    
-    SetupHotkeys() {
-        HotIfWinActive("ahk_id " this.gui.Hwnd)
-        Hotkey("Escape", (*) => this.gui.Hide())
-        HotIfWinActive()
-        
-        Hotkey("^r", (*) => this.Reset())
-    }
-    
-    SaveTask(*) {
-        if (this.nameEdit.Value = "")
-            return
-        this.listView.Add(, this.nameEdit.Value, this.priority.Text)
-        this.ClearFields()
-    }
-    
-    ClearFields(*) {
-        this.nameEdit.Value := ""
-        this.priority.Value := 1
-    }
-    
-    Reset(*) {
-        this.ClearFields()
-        this.radialHK1.Text := "!Capslock"
-        this.radialHK2.Text := "#Capslock"
-        this.enableAdvanced.Value := 1
-        this.showComplete.Value := 0
-        this.language.Choose("English")
-        this.UpdateSettings()
-    }
-    
-    SaveSettings(path := "settings.ini") {
-        try {
-            ; Save RadialMenu settings
-            for key, value in this.settings["RadialMenu"]
-                IniWrite(value, path, "RadialMenu", key)
-                
-            ; Save Interface settings
-            for key, value in this.settings["Interface"]
-                IniWrite(value, path, "Interface", key)
-                
-            ToolTip("Settings saved to " path)
-            SetTimer () => ToolTip(), -2000
-        }
-        catch as e {
-            MsgBox("Error saving settings: " e.Message)
-        }
-    }
-    
-    LoadSettings(path := "settings.ini") {
-        if (!FileExist(path))
-            return
-            
-        try {
-            ; Load RadialMenu settings
-            this.settings["RadialMenu"]["HotKey1"] := IniRead(path, "RadialMenu", "HotKey1", "!Capslock")
-            this.settings["RadialMenu"]["HotKey2"] := IniRead(path, "RadialMenu", "HotKey2", "#Capslock")
-            this.settings["RadialMenu"]["EnableAdvanced"] := IniRead(path, "RadialMenu", "EnableAdvanced", "true") = "true"
-            
-            ; Load Interface settings
-            this.settings["Interface"]["DarkMode"] := IniRead(path, "Interface", "DarkMode", "true") = "true"
-            this.settings["Interface"]["Language"] := IniRead(path, "Interface", "Language", "English")
-            
-            ; Update controls with loaded settings
-            this.SetupControls()
-            
-            ToolTip("Settings loaded from " path)
-            SetTimer () => ToolTip(), -2000
-        }
-        catch as e {
-            MsgBox("Error loading settings: " e.Message)
-        }
+        this.darkListView.Add(, "Item 1", "Value 1")
+        this.darkListView.Add(, "Item 2", "Value 2")
+        this.darkListView.Add(, "Item 3", "Value 3")
     }
 }
 
 class _Dark {
-    static __New() {
-        global DarkModeGUI_WindowProc := (hwnd, uMsg, wParam, lParam) => 
-            _Dark.ProcessWindowMessage(hwnd, uMsg, wParam, lParam)
+    class RECT {
+        left := 0
+        top := 0
+        right := 0
+        bottom := 0
     }
-    
+
+    class NMHDR {
+        hwndFrom := 0
+        idFrom := 0
+        code := 0
+    }
+
+    class NMCUSTOMDRAW {
+        hdr := 0
+        dwDrawStage := 0
+        hdc := 0
+        rc := 0
+        dwItemSpec := 0
+        uItemState := 0
+        lItemlParam := 0
+        __New() {
+            this.hdr := _Dark.NMHDR()
+            this.rc := _Dark.RECT()
+        }
+    }
+
+    static StructFromPtr(StructClass, ptr) {
+        obj := StructClass()
+        if (StructClass.Prototype.__Class = "NMHDR") {
+            obj.hwndFrom := NumGet(ptr, 0, "UPtr")
+            obj.idFrom := NumGet(ptr, A_PtrSize, "UPtr")
+            obj.code := NumGet(ptr, A_PtrSize * 2, "Int")
+        }
+        else if (StructClass.Prototype.__Class = "NMCUSTOMDRAW") {
+            obj.hdr := _Dark.NMHDR()
+            obj.hdr.hwndFrom := NumGet(ptr, 0, "UPtr")
+            obj.hdr.idFrom := NumGet(ptr, A_PtrSize, "UPtr")
+            obj.hdr.code := NumGet(ptr, A_PtrSize * 2, "Int")
+            obj.dwDrawStage := NumGet(ptr, A_PtrSize * 3, "UInt")
+            obj.hdc := NumGet(ptr, A_PtrSize * 3 + 4, "UPtr")
+            obj.rc := _Dark.RECT()
+            rectOffset := A_PtrSize * 3 + 4 + A_PtrSize
+            obj.rc.left := NumGet(ptr, rectOffset, "Int")
+            obj.rc.top := NumGet(ptr, rectOffset + 4, "Int")
+            obj.rc.right := NumGet(ptr, rectOffset + 8, "Int")
+            obj.rc.bottom := NumGet(ptr, rectOffset + 12, "Int")
+            obj.dwItemSpec := NumGet(ptr, rectOffset + 16, "UPtr")
+            obj.uItemState := NumGet(ptr, rectOffset + 16 + A_PtrSize, "UInt")
+            obj.lItemlParam := NumGet(ptr, rectOffset + 16 + A_PtrSize + 4, "IPtr")
+        }
+        return obj
+    }
+
+    static DarkColors := Map("Background", 0x171717, "Controls", 0x202020, "Font", 0xFFFFFF)
+    static Dark := Map("Background", 0x171717, "Controls", 0x1b1b1b, "ComboBoxBg", 0x1E1E1E, "Font", 0xE0E0E0,
+        "SliderThumb", 0x3E3E3E, "SliderTrack", 0x2D2D2D, "ProgressFill", 0x0078D7)
+
     static Instances := Map()
     static WindowProcOldMap := Map()
     static WindowProcCallbacks := Map()
     static TextBackgroundBrush := 0
+    static ControlsBackgroundBrush := 0
     static ButtonColors := Map()
     static ComboBoxes := Map()
     static ListViewHeaders := Map()
-    
-    static Dark := Map(
-        "Background", 0x171717,
-        "Controls", 0x1b1b1b, 
-        "ComboBoxBg", 0x1E1E1E,
-        "Font", 0xE0E0E0
-    )
-    
+    static HeaderCallbacks := Map()
+    static CheckboxTextControls := Map()
+    static TextControls := Map()
+    static DarkCheckboxPairs := Map()
+    static GroupBoxes := Map()
+    static RadioButtons := Map()
+    static SliderControls := Map()
+    static ProgressControls := Map()
+    static DateTimeControls := Map()
+    static MonthCalControls := Map()
+    static TabControls := Map()
+    static ListBoxControls := Map()
+
     static WM_CTLCOLOREDIT := 0x0133
     static WM_CTLCOLORLISTBOX := 0x0134
     static WM_CTLCOLORBTN := 0x0135
     static WM_CTLCOLORSTATIC := 0x0138
     static WM_NOTIFY := 0x004E
+    static WM_PAINT := 0x000F
+    static WM_ERASEBKGND := 0x0014
     static NM_CUSTOMDRAW := -12
     static HDN_FIRST := -300
-    static HDN_CUSTOMDRAW := -312
+    static HDN_CUSTOMDRAW := -12
     static CDDS_PREPAINT := 0x00000001
     static CDDS_ITEMPREPAINT := 0x00010001
+    static CDRF_DODEFAULT := 0x0
     static CDRF_NEWFONT := 0x00000002
     static CDRF_NOTIFYITEMDRAW := 0x00000020
+    static CDRF_SKIPDEFAULT := 0x00000004
     static DC_BRUSH := 18
     static GWL_WNDPROC := -4
     static GWL_STYLE := -16
-    
+    static LVM_GETHEADER := 0x101F
+    static HDM_SETIMAGELIST := 0x1208
+    static HDM_SETITEM := 0x120C
+    static HDM_LAYOUT := 0x1200
     static GetWindowLong := A_PtrSize = 8 ? "GetWindowLongPtr" : "GetWindowLong"
     static SetWindowLong := A_PtrSize = 8 ? "SetWindowLongPtr" : "SetWindowLong"
-    
-    Gui := ""
-    
-    __New(GuiObj) {
+
+    static __New() {
+        global _Dark_WindowProc := ObjBindMethod(_Dark, "ProcessWindowMessage")
+
         if (!_Dark.TextBackgroundBrush)
             _Dark.TextBackgroundBrush := DllCall("gdi32\CreateSolidBrush", "UInt", _Dark.Dark["Background"], "Ptr")
-        
-        this.Gui := GuiObj
-        this.SetWindowDarkMode()
-        this.SetControlsTheme()
-        this.SetupWindowProc()
+        if (!_Dark.ControlsBackgroundBrush)
+            _Dark.ControlsBackgroundBrush := DllCall("gdi32\CreateSolidBrush", "UInt", _Dark.Dark["Controls"], "Ptr")
     }
-    
-    SetWindowDarkMode() {
+
+    static HandleThemeChanged(ctrl, *) {
+        return 0
+    }
+
+    static HandleListViewNotify(ctrl, wParam, lParam, msg) {
+        static NM_CUSTOMDRAW := -12
+        static CDDS_PREPAINT := 0x00000001
+        static CDDS_ITEMPREPAINT := 0x00010001
+        static CDRF_DODEFAULT := 0x0
+        static CDRF_NOTIFYITEMDRAW := 0x00000020
+
+        hdr := _Dark.StructFromPtr(_Dark.NMHDR, lParam)
+
+        if (hdr.code != NM_CUSTOMDRAW || hdr.hwndFrom != ctrl.Header)
+            return
+
+        nmcd := _Dark.StructFromPtr(_Dark.NMCUSTOMDRAW, lParam)
+
+        if (nmcd.dwDrawStage == CDDS_PREPAINT)
+            return CDRF_NOTIFYITEMDRAW
+
+        if (nmcd.dwDrawStage == CDDS_ITEMPREPAINT) {
+            DllCall("gdi32\SetTextColor", "Ptr", nmcd.hdc, "UInt", 0xFFFFFF)
+            DllCall("gdi32\SetBkMode", "Ptr", nmcd.hdc, "Int", 1)
+        }
+
+        return CDRF_DODEFAULT
+    }
+
+    static ProcessWindowMessage(hwnd, msg, wParam, lParam, *) {
+        static WM_CTLCOLOREDIT := 0x0133
+        static WM_CTLCOLORLISTBOX := 0x0134
+        static WM_CTLCOLORBTN := 0x0135
+        static WM_CTLCOLORSTATIC := 0x0138
+        static TRANSPARENT := 1
+
+        if _Dark.WindowProcOldMap.Has(hwnd) {
+            oldProc := _Dark.WindowProcOldMap[hwnd]
+        } else {
+            return DllCall("DefWindowProc", "Ptr", hwnd, "UInt", msg, "Ptr", wParam, "Ptr", lParam, "Ptr")
+        }
+
+        ctrlHwnd := lParam
+
+        switch msg {
+            case WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX:
+                DllCall("SetTextColor", "Ptr", wParam, "UInt", _Dark.Dark["Font"])
+                DllCall("SetBkColor", "Ptr", wParam, "UInt", _Dark.Dark["Controls"])
+                return _Dark.ControlsBackgroundBrush
+
+            case WM_CTLCOLORBTN:
+                if _Dark.ButtonColors.Has(ctrlHwnd) {
+                    DllCall("SetTextColor", "Ptr", wParam, "UInt", _Dark.ButtonColors[ctrlHwnd]["text"])
+                    DllCall("SetBkColor", "Ptr", wParam, "UInt", _Dark.ButtonColors[ctrlHwnd]["bg"])
+                    DllCall("SetBkMode", "Ptr", wParam, "Int", TRANSPARENT)
+                    return _Dark.ControlsBackgroundBrush
+                }
+
+            case WM_CTLCOLORSTATIC:
+                if _Dark.TextControls.Has(ctrlHwnd) || _Dark.GroupBoxes.Has(ctrlHwnd) ||
+                    _Dark.DarkCheckboxPairs.Has(ctrlHwnd) || _Dark.RadioButtons.Has(ctrlHwnd) {
+                    DllCall("SetTextColor", "Ptr", wParam, "UInt", _Dark.Dark["Font"])
+                    DllCall("SetBkColor", "Ptr", wParam, "UInt", _Dark.Dark["Background"])
+                    DllCall("SetBkMode", "Ptr", wParam, "Int", TRANSPARENT)
+                    return _Dark.TextBackgroundBrush
+                }
+        }
+
+        return DllCall("CallWindowProc", "Ptr", oldProc, "Ptr", hwnd, "UInt", msg, "Ptr", wParam, "Ptr", lParam, "Ptr")
+    }
+
+    static SetWindowPos(hWnd, hWndInsertAfter, X := 0, Y := 0, cx := 0, cy := 0, uFlags := 0x40) {
+        return DllCall("User32\SetWindowPos", "ptr", hWnd, "ptr", hWndInsertAfter, "int", X, "int", Y, "int", cx, "int", cy, "uint", uFlags, "int")
+    }
+
+    static SendMessage(msg, wParam, lParam, hwndOrControl) {
+        hwnd := HasProp(hwndOrControl, "Hwnd") ? hwndOrControl.Hwnd : hwndOrControl
+        return DllCall("user32\SendMessage", "Ptr", hwnd, "UInt", msg, "Ptr", wParam, "Ptr", lParam, "Ptr")
+    }
+
+    static SetTextColor(hdc, color) {
+        return DllCall("gdi32\SetTextColor", "Ptr", hdc, "UInt", color)
+    }
+
+    static SetBkMode(hdc, mode) {
+        return DllCall("gdi32\SetBkMode", "Ptr", hdc, "Int", mode)
+    }
+
+    __New(GuiObj) {
+        _Dark.__New()
+        this.Gui := GuiObj
+        this.darkCheckboxes := Map()
         this.Gui.BackColor := _Dark.Dark["Background"]
-        
+
         if (VerCompare(A_OSVersion, "10.0.17763") >= 0) {
             DWMWA_USE_IMMERSIVE_DARK_MODE := 19
             if (VerCompare(A_OSVersion, "10.0.18985") >= 0)
                 DWMWA_USE_IMMERSIVE_DARK_MODE := 20
-            
             uxtheme := DllCall("kernel32\GetModuleHandle", "Str", "uxtheme", "Ptr")
             SetPreferredAppMode := DllCall("kernel32\GetProcAddress", "Ptr", uxtheme, "Ptr", 135, "Ptr")
             FlushMenuThemes := DllCall("kernel32\GetProcAddress", "Ptr", uxtheme, "Ptr", 136, "Ptr")
-            
-            DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", this.Gui.hWnd, 
-                   "Int", DWMWA_USE_IMMERSIVE_DARK_MODE, "Int*", true, "Int", 4)
+            DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", this.Gui.hWnd,
+                "Int", DWMWA_USE_IMMERSIVE_DARK_MODE, "Int*", true, "Int", 4)
             DllCall(SetPreferredAppMode, "Int", 2)
             DllCall(FlushMenuThemes)
         }
-    }
-    
-    SetControlsTheme() {
-        for hWnd, GuiCtrlObj in this.Gui {
-            switch GuiCtrlObj.Type {
-                case "Button", "CheckBox", "Radio", "ListBox", "UpDown":
-                    DllCall("uxtheme\SetWindowTheme", "Ptr", GuiCtrlObj.hWnd, "Str", "DarkMode_Explorer", "Ptr", 0)
-                
-                case "ComboBox", "DDL":
-                    _Dark.ComboBoxes[GuiCtrlObj.Hwnd] := true
-                    DllCall("uxtheme\SetWindowTheme", "Ptr", GuiCtrlObj.hWnd, "Str", "DarkMode_CFD", "Ptr", 0)
-                    try {
-                        DllCall("uxtheme\SetWindowThemeAttribute",
-                            "Ptr", GuiCtrlObj.hWnd,
-                            "Int", 3,
-                            "Int*", 0x404040,
-                            "Int", 4)
-                    }
-                
-                case "Edit":
-                    DllCall("uxtheme\SetWindowTheme", "Ptr", GuiCtrlObj.hWnd, "Str", "DarkMode_Explorer", "Ptr", 0)
-                
-                case "ListView":
-                    ; Set ListView text and background colors
-                    _Dark.SendMessage(0x1024, 0, _Dark.Dark["Font"], GuiCtrlObj.hWnd)         ; LVM_SETTEXTCOLOR
-                    _Dark.SendMessage(0x1026, 0, _Dark.Dark["Background"], GuiCtrlObj.hWnd)   ; LVM_SETBKCOLOR
-                    _Dark.SendMessage(0x1001, 0, _Dark.Dark["Background"], GuiCtrlObj.hWnd)   ; LVM_SETTEXTBKCOLOR
-                    DllCall("uxtheme\SetWindowTheme", "Ptr", GuiCtrlObj.hWnd, "Str", "DarkMode_Explorer", "Ptr", 0)
-                    
-                    ; Get ListView header control
-                    LV_Header := _Dark.SendMessage(0x101F, 0, 0, GuiCtrlObj.hWnd) ; LVM_GETHEADER
-                    if (LV_Header) {
-                        ; Register the header for processing notifications
-                        _Dark.ListViewHeaders[LV_Header] := true
-                        
-                        ; Set the theme for the header
-                        DllCall("uxtheme\SetWindowTheme", "Ptr", LV_Header, "Str", "DarkMode_ItemsView", "Ptr", 0)
-                        
-                        ; Custom draw for header colors - direct approach to set colors
-                        ; This gets the HDC (device context) for the header and sets the text color
-                        headerDC := DllCall("GetDC", "Ptr", LV_Header, "Ptr")
-                        if (headerDC) {
-                            DllCall("SetTextColor", "Ptr", headerDC, "UInt", 0xFFFFFF)  ; White text
-                            DllCall("ReleaseDC", "Ptr", LV_Header, "Ptr", headerDC)
-                        }
-                        
-                        ; Force a redraw of the header
-                        DllCall("InvalidateRect", "Ptr", LV_Header, "Ptr", 0, "Int", 1)
-                    }
-            }
-        }
-    }
-    
-    SetupWindowProc() {
+
+        this.SetControlsTheme()
+        this.SetupWindowProc()
+        this.RedrawAllControls()
         _Dark.Instances[this.Gui.Hwnd] := this
-        
-        if (!_Dark.WindowProcOldMap.Has(this.Gui.Hwnd)) {
-            oldProc := DllCall("user32\" _Dark.GetWindowLong, "Ptr", this.Gui.Hwnd, "Int", _Dark.GWL_WNDPROC, "Ptr")
-            _Dark.WindowProcOldMap[this.Gui.Hwnd] := oldProc
-            
-            callback := CallbackCreate(DarkModeGUI_WindowProc, , 4)
-            _Dark.WindowProcCallbacks[this.Gui.Hwnd] := callback
-            DllCall("user32\" _Dark.SetWindowLong, "Ptr", this.Gui.Hwnd, "Int", _Dark.GWL_WNDPROC, "Ptr", callback, "Ptr")
+        return this
+    }
+
+    SetupWindowProc() {
+        hwnd := this.Gui.Hwnd
+        if _Dark.WindowProcOldMap.Has(hwnd)
+            return
+
+        callback := CallbackCreate(_Dark_WindowProc, , 4)
+        _Dark.WindowProcCallbacks[hwnd] := callback
+
+        originalProc := DllCall(_Dark.SetWindowLong, "Ptr", hwnd, "Int", _Dark.GWL_WNDPROC, "Ptr", callback, "Ptr")
+        _Dark.WindowProcOldMap[hwnd] := originalProc
+    }
+
+    SetTheme(themeMap) {
+        if themeMap.Has("Background")
+            _Dark.Dark["Background"] := themeMap["Background"]
+        if themeMap.Has("Controls")
+            _Dark.Dark["Controls"] := themeMap["Controls"]
+        if themeMap.Has("Font")
+            _Dark.Dark["Font"] := themeMap["Font"]
+
+        this.Gui.BackColor := _Dark.Dark["Background"]
+
+        if (_Dark.TextBackgroundBrush) {
+            DllCall("DeleteObject", "Ptr", _Dark.TextBackgroundBrush)
+            _Dark.TextBackgroundBrush := DllCall("gdi32\CreateSolidBrush", "UInt", _Dark.Dark["Background"], "Ptr")
         }
-    }
-    
-    SetButtonColor(buttonCtrl, bgColor, textColor) {
-        if (IsInteger(bgColor))
-            bgColorInt := bgColor
-        else
-            bgColorInt := Integer("0x" . RegExReplace(bgColor, "^0x"))
-            
-        if (IsInteger(textColor))
-            textColorInt := textColor
-        else
-            textColorInt := Integer("0x" . RegExReplace(textColor, "^0x"))
-        
-        _Dark.ButtonColors[buttonCtrl.Hwnd] := Map(
-            "bg", bgColorInt,
-            "text", textColorInt
-        )
-        
-        DllCall("InvalidateRect", "Ptr", buttonCtrl.Hwnd, "Ptr", 0, "Int", true)
-    }
-    
-    static ProcessWindowMessage(hwnd, uMsg, wParam, lParam) {
-        Critical
-        
-        switch uMsg {
-            case _Dark.WM_CTLCOLOREDIT, _Dark.WM_CTLCOLORLISTBOX:
-                if (_Dark.ComboBoxes.Has(lParam) || _Dark.IsComboBoxListBox(lParam)) {
-                    try {
-                        DllCall("comctl32\DarkMode_ComboBox", "Ptr", wParam)
-                    }
-                    DllCall("gdi32\SetTextColor", "Ptr", wParam, "UInt", _Dark.Dark["Font"])
-                    DllCall("gdi32\SetBkColor", "Ptr", wParam, "UInt", _Dark.Dark["ComboBoxBg"])
-                    DllCall("gdi32\SetDCBrushColor", "Ptr", wParam, "UInt", _Dark.Dark["ComboBoxBg"])
-                } else {
-                    DllCall("gdi32\SetTextColor", "Ptr", wParam, "UInt", _Dark.Dark["Font"])
-                    DllCall("gdi32\SetBkColor", "Ptr", wParam, "UInt", _Dark.Dark["Controls"])
-                    DllCall("gdi32\SetDCBrushColor", "Ptr", wParam, "UInt", _Dark.Dark["Controls"])
-                }
-                return DllCall("gdi32\GetStockObject", "Int", _Dark.DC_BRUSH, "Ptr")
-                
-            case _Dark.WM_CTLCOLORBTN:
-                if (_Dark.ButtonColors.Has(lParam)) {
-                    btnColors := _Dark.ButtonColors[lParam]
-                    DllCall("gdi32\SetTextColor", "Ptr", wParam, "UInt", btnColors["text"])
-                    DllCall("gdi32\SetBkColor", "Ptr", wParam, "UInt", btnColors["bg"])
-                    DllCall("gdi32\SetDCBrushColor", "Ptr", wParam, "UInt", btnColors["bg"])
-                } else {
-                    DllCall("gdi32\SetTextColor", "Ptr", wParam, "UInt", _Dark.Dark["Font"])
-                    DllCall("gdi32\SetDCBrushColor", "Ptr", wParam, "UInt", _Dark.Dark["Background"])
-                }
-                return DllCall("gdi32\GetStockObject", "Int", _Dark.DC_BRUSH, "Ptr")
-                
-            case _Dark.WM_CTLCOLORSTATIC:
-                DllCall("gdi32\SetTextColor", "Ptr", wParam, "UInt", _Dark.Dark["Font"])
-                DllCall("gdi32\SetBkColor", "Ptr", wParam, "UInt", _Dark.Dark["Background"])
-                return _Dark.TextBackgroundBrush
-                
-            case _Dark.WM_NOTIFY:
-                hwndFrom := NumGet(lParam, 0, "Ptr")
-                code := NumGet(lParam, A_PtrSize + 4, "Int")
-                
-                ; Special handling for ListView header custom drawing
-                if (_Dark.ListViewHeaders.Has(hwndFrom) && code == _Dark.HDN_CUSTOMDRAW) {
-                    ; Get info about the custom draw stage
-                    nmcd := lParam
-                    drawStage := NumGet(nmcd, A_PtrSize * 2 + 8, "UInt")
-                    hdc := NumGet(nmcd, A_PtrSize * 2 + 12, "Ptr")
-                    
-                    if (drawStage == _Dark.CDDS_PREPAINT) {
-                        ; Request notifications for each item
-                        return _Dark.CDRF_NOTIFYITEMDRAW
-                    } 
-                    else if (drawStage == _Dark.CDDS_ITEMPREPAINT) {
-                        ; Set white text color for each header item
-                        DllCall("gdi32\SetTextColor", "Ptr", hdc, "UInt", 0xFFFFFF)
-                        
-                        ; Keep the background dark
-                        DllCall("gdi32\SetBkColor", "Ptr", hdc, "UInt", _Dark.Dark["Controls"])
-                        DllCall("gdi32\SetBkMode", "Ptr", hdc, "Int", 1)  ; TRANSPARENT
-                        
-                        ; Use these color settings
-                        return _Dark.CDRF_NEWFONT
-                    }
-                }
+
+        if (_Dark.ControlsBackgroundBrush) {
+            DllCall("DeleteObject", "Ptr", _Dark.ControlsBackgroundBrush)
+            _Dark.ControlsBackgroundBrush := DllCall("gdi32\CreateSolidBrush", "UInt", _Dark.Dark["Controls"], "Ptr")
         }
-        
-        if (_Dark.WindowProcOldMap.Has(hwnd))
-            return DllCall("CallWindowProc", "Ptr", _Dark.WindowProcOldMap[hwnd], 
-                          "Ptr", hwnd, "UInt", uMsg, "Ptr", wParam, "Ptr", lParam)
-        return 0
+
+        this.RedrawAllControls()
     }
-    
-    static IsComboBoxListBox(hwnd) {
-        static className := Buffer(64)
-        if DllCall("GetClassName", "Ptr", hwnd, "Ptr", className, "Int", 32) {
-            return StrGet(className) == "ComboLBox"
-        }
-        return false
-    }
-    
-    static AddDarkCheckBox(obj, Options, Text) {
+
+    AddDarkCheckBox(Options, Text) {
         static SM_CXMENUCHECK := 71
         static SM_CYMENUCHECK := 72
         static checkBoxW := SysGet(SM_CXMENUCHECK)
         static checkBoxH := SysGet(SM_CYMENUCHECK)
-        
-        chbox := obj.Add("Checkbox", Options " r1.5 +0x4000000", Text)
+        chbox := this.Gui.AddCheckBox(Options " r1.5 +0x4000000", "")
         if !InStr(Options, "right")
-            txt := obj.Add("Text", "xp+" (checkBoxW+8) " yp+2 HP-4 +0x4000200", Text)
+            txt := this.Gui.AddText("xp+" (checkBoxW + 8) " yp+2 HP-4 +0x4000200 cFFFFFF", Text)
         else
-            txt := obj.Add("Text", "xp+8 yp+2 HP-4 +0x4000200", Text)
-        
-        chbox.Text := ""
+            txt := this.Gui.AddText("xp+8 yp+2 HP-4 +0x4000200 cFFFFFF", Text)
+        this.darkCheckboxes[chbox.Hwnd] := txt
         chbox.DeleteProp("Text")
         chbox.DefineProp("Text", {
-            Get: this => txt.Text,
-            Set: (this, value) => txt.Text := value
+            Get: ObjBindMethod(txt, "GetText"),
+            Set: ObjBindMethod(txt, "SetText")
         })
-        
-        _Dark.SetWindowPos(txt.hwnd, 0, , , , , 0x43)
+        _Dark.SetWindowPos(txt.Hwnd, 0, 0, 0, 0, 0, 0x43)
+        DllCall("uxtheme\SetWindowTheme", "Ptr", chbox.hWnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+        pair := Map()
+        pair["checkbox"] := chbox
+        pair["text"] := txt
+        _Dark.DarkCheckboxPairs[chbox.Hwnd] := pair
+        DllCall("InvalidateRect", "Ptr", chbox.Hwnd, "Ptr", 0, "Int", true)
+        DllCall("InvalidateRect", "Ptr", txt.Hwnd, "Ptr", 0, "Int", true)
         return chbox
     }
-    
-    static SetWindowPos(hWnd, hWndInsertAfter, X := 0, Y := 0, cx := 0, cy := 0, uFlags := 0x40) {
-        return DllCall("User32\SetWindowPos", "ptr", hWnd, "ptr", hWndInsertAfter, "int", X, "int", Y, "int", cx, "int", cy, "uint", uFlags, "int")
+
+    AddListView(Options, Headers) {
+        lv := this.Gui.Add("ListView", Options, Headers)
+
+        static LVM_SETBKCOLOR := 0x1001
+        static LVM_SETTEXTCOLOR := 0x1033
+        static LVM_SETTEXTBKCOLOR := 0x1026
+        static LVM_GETHEADER := 0x101F
+        static NM_CUSTOMDRAW := -12
+        static UIS_SET := 1
+        static UISF_HIDEFOCUS := 0x1
+        static WM_CHANGEUISTATE := 0x0127
+        static WM_NOTIFY := 0x4E
+        static WM_THEMECHANGED := 0x031A
+        static LVS_EX_DOUBLEBUFFER := 0x10000
+
+        _Dark.SendMessage(LVM_SETTEXTCOLOR, 0, 0xFFFFFF, lv.hWnd)
+        _Dark.SendMessage(LVM_SETBKCOLOR, 0, _Dark.Dark["Background"], lv.hWnd)
+        _Dark.SendMessage(LVM_SETTEXTBKCOLOR, 0, _Dark.Dark["Background"], lv.hWnd)
+
+        lv.Opt("+Grid +LV0x10000")
+
+        lv.Header := _Dark.SendMessage(LVM_GETHEADER, 0, 0, lv.Hwnd)
+
+        lv.OnMessage(WM_THEMECHANGED, ObjBindMethod(_Dark, "HandleThemeChanged"))
+        lv.OnMessage(WM_NOTIFY, ObjBindMethod(_Dark, "HandleListViewNotify"))
+
+        _Dark.SendMessage(WM_CHANGEUISTATE, (UIS_SET << 8) | UISF_HIDEFOCUS, 0, lv.Hwnd)
+
+        DllCall("uxtheme\SetWindowTheme", "Ptr", lv.Header, "Str", "DarkMode_ItemsView", "Ptr", 0)
+        DllCall("uxtheme\SetWindowTheme", "Ptr", lv.Hwnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+
+        DllCall("InvalidateRect", "Ptr", lv.Header, "Ptr", 0, "Int", true)
+        DllCall("InvalidateRect", "Ptr", lv.Hwnd, "Ptr", 0, "Int", true)
+
+        return lv
     }
-    
-    static SendMessage(msg, wParam, lParam, hwnd) {
-        return DllCall("user32\SendMessage", "Ptr", hwnd, "UInt", msg, "Ptr", wParam, "Ptr", lParam, "Ptr")
+
+    AddDarkButton(Options, Text) {
+        btn := this.Gui.AddButton(Options, Text)
+        DllCall("uxtheme\SetWindowTheme", "Ptr", btn.hWnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+        buttonColorMap := Map("bg", _Dark.Dark["Controls"], "text", _Dark.Dark["Font"])
+        _Dark.ButtonColors[btn.Hwnd] := buttonColorMap
+        btn.SetFont("cFFFFFF")
+        DllCall("InvalidateRect", "Ptr", btn.hWnd, "Ptr", 0, "Int", true)
+        return btn
     }
-    
-    __Delete() {
-        if (_Dark.WindowProcOldMap.Has(this.Gui.Hwnd)) {
-            DllCall("user32\" _Dark.SetWindowLong, "Ptr", this.Gui.Hwnd, 
-                   "Int", _Dark.GWL_WNDPROC, "Ptr", _Dark.WindowProcOldMap[this.Gui.Hwnd], "Ptr")
-                   
-            CallbackFree(_Dark.WindowProcCallbacks[this.Gui.Hwnd])
-            _Dark.WindowProcCallbacks.Delete(this.Gui.Hwnd)
-            _Dark.WindowProcOldMap.Delete(this.Gui.Hwnd)
+
+    AddDarkEdit(Options, Text := "") {
+        edit := this.Gui.AddEdit(Options, Text)
+        DllCall("uxtheme\SetWindowTheme", "Ptr", edit.hWnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+        edit.SetFont("cFFFFFF")
+        DllCall("InvalidateRect", "Ptr", edit.hWnd, "Ptr", 0, "Int", true)
+        return edit
+    }
+
+    AddDarkComboBox(Options, Items := "") {
+        combo := this.Gui.AddComboBox(Options, Items)
+        DllCall("uxtheme\SetWindowTheme", "Ptr", combo.hWnd, "Str", "DarkMode_CFD", "Ptr", 0)
+        _Dark.ComboBoxes[combo.Hwnd] := true
+        combo.SetFont("cFFFFFF")
+        DllCall("InvalidateRect", "Ptr", combo.hWnd, "Ptr", 0, "Int", true)
+        return combo
+    }
+
+    AddDarkText(Options, Text := "") {
+        txt := this.Gui.AddText(Options " cFFFFFF", Text)
+        _Dark.TextControls[txt.Hwnd] := true
+        DllCall("InvalidateRect", "Ptr", txt.hWnd, "Ptr", 0, "Int", true)
+        return txt
+    }
+
+    AddDarkGroupBox(Options, Text := "") {
+        groupBox := this.Gui.AddGroupBox(Options, Text)
+        DllCall("uxtheme\SetWindowTheme", "Ptr", groupBox.hWnd, "Str", "", "Ptr", 0)
+        groupBox.SetFont("cFFFFFF")
+        _Dark.GroupBoxes[groupBox.Hwnd] := true
+        DllCall("InvalidateRect", "Ptr", groupBox.hWnd, "Ptr", 0, "Int", true)
+        return groupBox
+    }
+
+    AddDarkRadio(Options, Text := "") {
+        radio := this.Gui.AddRadio(Options, Text)
+        DllCall("uxtheme\SetWindowTheme", "Ptr", radio.hWnd, "Str", "", "Ptr", 0)
+        buttonColorMap := Map("bg", _Dark.Dark["Background"], "text", 0xFFFFFF)
+        _Dark.ButtonColors[radio.Hwnd] := buttonColorMap
+        _Dark.RadioButtons[radio.Hwnd] := true
+        radio.SetFont("cFFFFFF")
+        DllCall("InvalidateRect", "Ptr", radio.hWnd, "Ptr", 0, "Int", true)
+        return radio
+    }
+
+    AddDarkListBox(Options, Items := "") {
+        listBox := this.Gui.AddListBox(Options, Items)
+        DllCall("uxtheme\SetWindowTheme", "Ptr", listBox.hWnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+        _Dark.ListBoxControls[listBox.Hwnd] := true
+        listBox.SetFont("cFFFFFF")
+        DllCall("InvalidateRect", "Ptr", listBox.hWnd, "Ptr", 0, "Int", true)
+        return listBox
+    }
+
+    AddDarkSlider(Options, StartingValue := 0) {
+        slider := this.Gui.AddSlider(Options, StartingValue)
+        DllCall("uxtheme\SetWindowTheme", "Ptr", slider.hWnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+        _Dark.SliderControls[slider.Hwnd] := true
+        DllCall("InvalidateRect", "Ptr", slider.hWnd, "Ptr", 0, "Int", true)
+        return slider
+    }
+
+    AddDarkProgress(Options, StartingValue := 0) {
+        progress := this.Gui.AddProgress(Options, StartingValue)
+        DllCall("uxtheme\SetWindowTheme", "Ptr", progress.hWnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+        _Dark.ProgressControls[progress.Hwnd] := true
+        DllCall("InvalidateRect", "Ptr", progress.hWnd, "Ptr", 0, "Int", true)
+        return progress
+    }
+
+    AddDarkDateTime(Options := "") {
+        dateTime := this.Gui.AddDateTime(Options)
+        DllCall("uxtheme\SetWindowTheme", "Ptr", dateTime.hWnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+        _Dark.DateTimeControls[dateTime.Hwnd] := true
+        dateTime.SetFont("cFFFFFF")
+        DllCall("InvalidateRect", "Ptr", dateTime.hWnd, "Ptr", 0, "Int", true)
+        return dateTime
+    }
+
+    AddDarkMonthCal(Options := "") {
+        monthCal := this.Gui.AddMonthCal(Options)
+        DllCall("uxtheme\SetWindowTheme", "Ptr", monthCal.hWnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+        _Dark.MonthCalControls[monthCal.Hwnd] := true
+        DllCall("InvalidateRect", "Ptr", monthCal.hWnd, "Ptr", 0, "Int", true)
+        return monthCal
+    }
+
+    AddDarkTab3(Options, Tabs) {
+        tab := this.Gui.AddTab3(Options, Tabs)
+        DllCall("uxtheme\SetWindowTheme", "Ptr", tab.hWnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+        _Dark.TabControls[tab.Hwnd] := true
+        tab.SetFont("cFFFFFF")
+        DllCall("InvalidateRect", "Ptr", tab.hWnd, "Ptr", 0, "Int", true)
+        return tab
+    }
+
+    RedrawAllControls() {
+        DllCall("RedrawWindow", "Ptr", this.Gui.Hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x0285)
+        for hWnd, GuiCtrlObj in this.Gui {
+            DllCall("RedrawWindow", "Ptr", GuiCtrlObj.Hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x0001)
+            DllCall("InvalidateRect", "Ptr", GuiCtrlObj.Hwnd, "Ptr", 0, "Int", true)
         }
-        
-        if (_Dark.Instances.Has(this.Gui.Hwnd))
-            _Dark.Instances.Delete(this.Gui.Hwnd)
     }
-}
 
-AddDarkCheckBox(obj, Options, Text) {
-    return _Dark.AddDarkCheckBox(obj, Options, Text)
-}
-
-SetWindowPos(hWnd, hWndInsertAfter, X := 0, Y := 0, cx := 0, cy := 0, uFlags := 0x40) {
-    return _Dark.SetWindowPos(hWnd, hWndInsertAfter, X, Y, cx, cy, uFlags)
-}
-
-SendMessage(msg, wParam, lParam, hwnd) {
-    return _Dark.SendMessage(msg, wParam, lParam, hwnd)
+    SetControlsTheme() {
+        for hWnd, GuiCtrlObj in this.Gui {
+            switch GuiCtrlObj.Type {
+                case "Button":
+                    DllCall("uxtheme\SetWindowTheme", "Ptr", GuiCtrlObj.hWnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+                    buttonColorMap := Map("bg", _Dark.Dark["Controls"], "text", _Dark.Dark["Font"])
+                    _Dark.ButtonColors[GuiCtrlObj.Hwnd] := buttonColorMap
+                case "CheckBox", "Radio":
+                    DllCall("uxtheme\SetWindowTheme", "Ptr", GuiCtrlObj.hWnd, "Str", "", "Ptr", 0)
+                    buttonColorMap := Map("bg", _Dark.Dark["Background"], "text", 0xFFFFFF)
+                    _Dark.ButtonColors[GuiCtrlObj.Hwnd] := buttonColorMap
+                    if (GuiCtrlObj.Type == "Radio")
+                        _Dark.RadioButtons[GuiCtrlObj.Hwnd] := true
+                    GuiCtrlObj.SetFont("cFFFFFF")
+                case "ComboBox", "DDL":
+                    _Dark.ComboBoxes[GuiCtrlObj.Hwnd] := true
+                    DllCall("uxtheme\SetWindowTheme", "Ptr", GuiCtrlObj.hWnd, "Str", "DarkMode_CFD", "Ptr", 0)
+                case "Edit":
+                    DllCall("uxtheme\SetWindowTheme", "Ptr", GuiCtrlObj.hWnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+                case "ListView":
+                    _Dark.SendMessage(0x1024, 0, _Dark.Dark["Font"], GuiCtrlObj.Hwnd)
+                    _Dark.SendMessage(0x1026, 0, _Dark.Dark["Background"], GuiCtrlObj.Hwnd)
+                    _Dark.SendMessage(0x1001, 0, _Dark.Dark["Background"], GuiCtrlObj.Hwnd)
+                    GuiCtrlObj.Header := _Dark.SendMessage(0x101F, 0, 0, GuiCtrlObj.Hwnd)
+                    GuiCtrlObj.OnMessage(0x031A, ObjBindMethod(_Dark, "HandleThemeChanged"))
+                    GuiCtrlObj.OnMessage(0x4E, ObjBindMethod(_Dark, "HandleListViewNotify"))
+                    _Dark.SendMessage(0x0127, (1 << 8) | 0x1, 0, GuiCtrlObj.Hwnd)
+                    DllCall("uxtheme\SetWindowTheme", "Ptr", GuiCtrlObj.Header, "Str", "DarkMode_ItemsView", "Ptr", 0)
+                    DllCall("uxtheme\SetWindowTheme", "Ptr", GuiCtrlObj.Hwnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+                    DllCall("InvalidateRect", "Ptr", GuiCtrlObj.Header, "Ptr", 0, "Int", true)
+                case "ListBox", "UpDown":
+                    DllCall("uxtheme\SetWindowTheme", "Ptr", GuiCtrlObj.hWnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+                case "Text", "Link":
+                    _Dark.TextControls[GuiCtrlObj.Hwnd] := true
+                    GuiCtrlObj.Opt("cFFFFFF")
+                case "GroupBox":
+                    _Dark.GroupBoxes[GuiCtrlObj.Hwnd] := true
+                    DllCall("uxtheme\SetWindowTheme", "Ptr", GuiCtrlObj.hWnd, "Str", "", "Ptr", 0)
+                    GuiCtrlObj.SetFont("cFFFFFF")
+                case "Slider":
+                    _Dark.SliderControls[GuiCtrlObj.Hwnd] := true
+                    DllCall("uxtheme\SetWindowTheme", "Ptr", GuiCtrlObj.hWnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+                case "Progress":
+                    _Dark.ProgressControls[GuiCtrlObj.Hwnd] := true
+                    DllCall("uxtheme\SetWindowTheme", "Ptr", GuiCtrlObj.hWnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+                case "DateTime":
+                    _Dark.DateTimeControls[GuiCtrlObj.Hwnd] := true
+                    DllCall("uxtheme\SetWindowTheme", "Ptr", GuiCtrlObj.hWnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+                    GuiCtrlObj.SetFont("cFFFFFF")
+                case "MonthCal":
+                    _Dark.MonthCalControls[GuiCtrlObj.Hwnd] := true
+                    DllCall("uxtheme\SetWindowTheme", "Ptr", GuiCtrlObj.hWnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+                case "Tab3":
+                    _Dark.TabControls[GuiCtrlObj.Hwnd] := true
+                    DllCall("uxtheme\SetWindowTheme", "Ptr", GuiCtrlObj.hWnd, "Str", "DarkMode_Explorer", "Ptr", 0)
+                    GuiCtrlObj.SetFont("cFFFFFF")
+            }
+            DllCall("InvalidateRect", "Ptr", GuiCtrlObj.Hwnd, "Ptr", 0, "Int", true)
+        }
+    }
 }
