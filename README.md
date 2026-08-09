@@ -34,19 +34,27 @@ Public API: `DarkGui`, `DarkTheme`, `DarkTitleBar`, `DarkMenu`, `DarkMenuBar`.
 
 Real GUIs from the wider script collection, each just `#Include`-ing one of the `DarkModeModular*` files:
 
-Win11 chrome demo — live Mica/Acrylic backdrop and caption-color toggles on a DarkGui window:
+Teleprompter — WPM-paced reading with strike-through for read words and live font/speed controls:
 
-![Win11 chrome demo](screenshots/App_Win11Chrome.png)
+![Teleprompter](screenshots/App_Teleprompter.png)
 
-Responsive layout engine settings dialog — anchored controls reflow on resize:
+Pipeline Monitor — async pipeline visualizer with per-stage status boxes, timings, and live streamed output:
 
-![GuiLayout demo](screenshots/App_GuiLayout.png)
+![Pipeline Monitor](screenshots/App_PipelineMonitor.png)
+
+DarkPropertyGrid — editable property-grid custom control with category rows, in-place cell editors, and a change log:
+
+![DarkPropertyGrid demo](screenshots/App_PropertyGrid.png)
+
+DarkRichEdit — themed RICHEDIT50W with named styles, per-run colors, and palette-swap re-theming:
+
+![DarkRichEdit demo](screenshots/App_RichEdit.png)
 
 Advanced button styles — icon, split/dropdown, command-link, toggle, and flat buttons:
 
 ![Advanced buttons demo](screenshots/App_AdvancedButtons.png)
 
-Search bar with embedded button and live-filtered list:
+Search bar with an embedded flat button inside the Edit's border and a live-filtered list:
 
 ![Embedded search demo](screenshots/App_SearchBar.png)
 
