@@ -1,206 +1,52 @@
 /*
-DarkModeModular_Alpha.ahk — Dark mode GUI framework for AutoHotkey v2 (alpha.30 modernization)
-
-Drop-in replacement for Lib/DarkModeModular.ahk that targets the v2.1-alpha.30+Console
-fork. Win32 structs are declared with typed Struct + class-ref properties (IntPtr,
-Int32, UInt32, ...), eliminating the hand-rolled offset/alignment math and the
-A_PtrSize ternaries used in the alpha.27 file. Public API is unchanged.
+DarkModeModular.ahk — Dark mode GUI framework for AutoHotkey v2
 
 Usage:
-  #Include DarkModeModular_Alpha.ahk
+  #Include DarkModeModular.ahk
   myGui := DarkGui("+Resize", "My App")
   myGui.Add("Button", "+Accent", "OK")
   myGui.Add("Edit", "w300", "text")
   myGui.Show()
 
-Public API: DarkGui, DarkTheme, DarkTitleBar, DarkMenu, DarkMenuBar, DarkScrollbar
+
+Public API: DarkGui, DarkTheme, DarkTitleBar, DarkMenu, DarkMenuBar, DarkScrollbar, DarkTooltip
 All controls added via DarkGui.Add() are automatically dark-styled.
 Use "+Accent" on buttons for blue accent color.
 */
-#Requires AutoHotkey v2.1-alpha.30
+#Requires AutoHotkey v2.1-alpha.17
+#SingleInstance Force
 
-; Win32 struct catalogue. Field-by-field types; alpha.30 Struct handles
-; pointer size and alignment automatically.
-
-Struct DM_RECT {
-    left:   Int32
-    top:    Int32
-    right:  Int32
-    bottom: Int32
+; Win32 struct helpers (NumGet-based for +Console engine compatibility).
+class _DM_NMHDR {
+    static At(ptr) {
+        return {
+            hwndFrom: NumGet(ptr, 0, "Ptr"),
+            idFrom:   NumGet(ptr, A_PtrSize, "Ptr"),
+            code:     NumGet(ptr, A_PtrSize * 2, "Int")
+        }
+    }
 }
 
-Struct DM_POINT {
-    x: Int32
-    y: Int32
-}
+class _DM_NMCD {
+    static At(ptr) {
+        static hdrSize  := A_PtrSize * 2 + 4
+        static baseOff  := (hdrSize + (A_PtrSize - 1)) & ~(A_PtrSize - 1)
+        static stageOff := baseOff
+        static hdcOff   := baseOff + A_PtrSize
+        static rcOff    := hdcOff + A_PtrSize
+        static specOff  := rcOff + 16
+        static stateOff := specOff + A_PtrSize
+        static paramOff := (stateOff + 4 + (A_PtrSize - 1)) & ~(A_PtrSize - 1)
 
-Struct DM_SIZE {
-    cx: Int32
-    cy: Int32
-}
-
-; Three contiguous POINTs for the owner-draw arrow/chevron polygons.
-Struct DM_TRIANGLE {
-    p: DM_POINT[3]
-}
-
-; GdiplusStartupInput — only GdiplusVersion is set; the rest stay zero.
-Struct DM_GpInput {
-    GdiplusVersion:           UInt32
-    DebugEventCallback:       IntPtr
-    SuppressBackgroundThread: Int32
-    SuppressExternalCodecs:   Int32
-}
-
-Struct DM_NMHDR {
-    hwndFrom: IntPtr
-    idFrom:   IntPtr
-    code:     Int32
-}
-
-Struct DM_NMCUSTOMDRAW {
-    hdr:         DM_NMHDR
-    dwDrawStage: UInt32
-    hdc:         IntPtr
-    rc:          DM_RECT
-    dwItemSpec:  IntPtr
-    uItemState:  UInt32
-    lItemlParam: IntPtr
-}
-
-Struct DM_PAINTSTRUCT {
-    hdc:         IntPtr
-    fErase:      Int32
-    rcPaint:     DM_RECT
-    fRestore:    Int32
-    fIncUpdate:  Int32
-    rgbReserved: Int8[32]
-}
-
-Struct DM_TRACKMOUSEEVENT {
-    cbSize:      UInt32
-    dwFlags:     UInt32
-    hwndTrack:   IntPtr
-    dwHoverTime: UInt32
-}
-
-Struct DM_SCROLLBARINFO {
-    cbSize:        UInt32
-    rcScrollBar:   DM_RECT
-    dxyLineButton: Int32
-    xyThumbTop:    Int32
-    xyThumbBottom: Int32
-    reserved:      Int32
-    rgstate:       UInt32[6]
-}
-
-Struct DM_HDITEMW {
-    mask:       UInt32
-    cxy:        Int32
-    pszText:    IntPtr
-    hbm:        IntPtr
-    cchTextMax: Int32
-    fmt:        Int32
-    lParam:     IntPtr
-    iImage:     Int32
-    iOrder:     Int32
-    type:       UInt32
-    pvFilter:   IntPtr
-    state:      UInt32
-}
-
-Struct DM_LVITEMW {
-    mask:       UInt32
-    iItem:      Int32
-    iSubItem:   Int32
-    state:      UInt32
-    stateMask:  UInt32
-    pszText:    IntPtr
-    cchTextMax: Int32
-    iImage:     Int32
-    lParam:     IntPtr
-    iIndent:    Int32
-    iGroupId:   Int32
-    cColumns:   UInt32
-    puColumns:  IntPtr
-    piColFmt:   IntPtr
-    iGroup:     Int32
-}
-
-Struct DM_TCITEMW {
-    mask:        UInt32
-    dwState:     UInt32
-    dwStateMask: UInt32
-    pszText:     IntPtr
-    cchTextMax:  Int32
-    iImage:      Int32
-    lParam:      IntPtr
-}
-
-Struct DM_DRAWITEMSTRUCT {
-    CtlType:    UInt32
-    CtlID:      UInt32
-    itemID:     UInt32
-    itemAction: UInt32
-    itemState:  UInt32
-    hwndItem:   IntPtr
-    hDC:        IntPtr
-    rcItem:     DM_RECT
-    itemData:   IntPtr
-}
-
-Struct DM_COMBOBOXINFO {
-    cbSize:      UInt32
-    rcItem:      DM_RECT
-    rcButton:    DM_RECT
-    stateButton: UInt32
-    hwndCombo:   IntPtr
-    hwndItem:    IntPtr
-    hwndList:    IntPtr
-}
-
-Struct DM_MENUINFO {
-    cbSize:          UInt32
-    fMask:           UInt32
-    dwStyle:         UInt32
-    cyMax:           UInt32
-    hbrBack:         IntPtr
-    dwContextHelpID: UInt32
-    dwMenuData:      IntPtr
-}
-
-Struct DM_TEXTMETRICW {
-    tmHeight:           Int32
-    tmAscent:           Int32
-    tmDescent:          Int32
-    tmInternalLeading:  Int32
-    tmExternalLeading:  Int32
-    tmAveCharWidth:     Int32
-    tmMaxCharWidth:     Int32
-    tmWeight:           Int32
-    tmOverhang:         Int32
-    tmDigitizedAspectX: Int32
-    tmDigitizedAspectY: Int32
-    tmFirstChar:        UInt16
-    tmLastChar:         UInt16
-    tmDefaultChar:      UInt16
-    tmBreakChar:        UInt16
-    tmItalic:           Int8
-    tmUnderlined:       Int8
-    tmStruckOut:        Int8
-    tmPitchAndFamily:   Int8
-    tmCharSet:          Int8
-}
-
-Struct DM_MCHITTESTINFO {
-    cbSize:  UInt32
-    pt:      DM_POINT
-    uHit:    UInt32
-    st:      UInt16[8]
-    rc:      DM_RECT
-    iOffset: Int32
-    iRow:    Int32
-    iCol:    Int32
+        return {
+            hdr: _DM_NMHDR.At(ptr),
+            dwDrawStage: NumGet(ptr, stageOff, "UInt"),
+            hdc:         NumGet(ptr, hdcOff, "Ptr"),
+            dwItemSpec:  NumGet(ptr, specOff, "Ptr"),
+            uItemState:  NumGet(ptr, stateOff, "UInt"),
+            lItemlParam: NumGet(ptr, paramOff, "Ptr")
+        }
+    }
 }
 
 /**
@@ -208,10 +54,7 @@ Struct DM_MCHITTESTINFO {
  * Provides color constants, brush caching, and utility functions.
  */
 class DarkTheme {
-    /** @type {Map} Color palette. Base tones plus owner-draw button state colors
-     * (ButtonHover/ButtonPressed/ButtonBorder, AccentHover/AccentPressed/AccentBorder,
-     * FlatPressed) so SetColor and theme switches can reach them — previously these
-     * were hardcoded literals inside the button paint paths. */
+    /** @type {Map} Color palette: Background, Controls, ControlsHover, ControlsActive, Font, FontDim, Accent, Border, Selection, GridLine, Header */
     static Colors := Map(
         "Background", 0x1A1A1A,
         "Controls", 0x252525,
@@ -226,27 +69,11 @@ class DarkTheme {
         "Header", 0x2D2D2D,
         "ScrollTrack", 0x3C3C3C,
         "ScrollThumb", 0x5A5A5A,
-        "ScrollThumbHover", 0x787878,
-        "ButtonHover", 0x303030,
-        "ButtonPressed", 0x1F1F1F,
-        "ButtonBorder", 0x3A3A3A,
-        "AccentHover", 0x1A8CFF,
-        "AccentPressed", 0x005A9E,
-        "AccentBorder", 0x0064B0,
-        "FlatPressed", 0x282828,
-        "DisabledBg", 0x202020,
-        "DisabledText", 0x6E6E6E,
-        "Link", 0x4CA0FF
+        "ScrollThumbHover", 0x787878
     )
 
     /** @type {Map} Cached GDI brush handles keyed by color name */
     static Brushes := Map()
-    /** @type {Map} Value-keyed pen/brush cache built on demand by paint code.
-     * Keys: "b|<rgb>" (solid brush), "p|<width>|<rgb>" (pen). DarkTheme owns
-     * these handles — paint code must never DeleteObject them. */
-    static _GdiCache := Map()
-    /** @type {Map} Registered DarkGui window handles, for live re-theming via SetColor */
-    static Windows := Map()
     /** @type {Integer} Active DarkGui instance count */
     static _refCount := 0
     /** @type {Boolean} Whether OnExit safety net is registered */
@@ -273,17 +100,15 @@ class DarkTheme {
     static AddRef() => ++this._refCount
 
     /**
-     * Decrements the active-window reference count.
-     *
-     * Deliberately does NOT free brushes here. The palette brushes are
-     * process-shared and cheap to keep; freeing them when the count briefly
-     * reaches zero breaks any {@link DarkGui} created afterward (the common
-     * close-all-then-reopen pattern). Final teardown is {@link DarkTheme.Cleanup},
-     * invoked from the {@link DarkTheme._OnAppExit} handler on normal exit.
+     * Decrements reference count. Cleans up brushes and GDI+ when
+     * the last {@link DarkGui} instance is destroyed.
      */
     static Release() {
-        if --this._refCount < 0
+        if --this._refCount <= 0 {
             this._refCount := 0
+            this.Cleanup()
+            _DarkSlider.Shutdown()
+        }
     }
 
     /**
@@ -291,7 +116,7 @@ class DarkTheme {
      * @param {String} name - Color name from Colors map
      * @returns {Ptr} GDI brush handle or 0 if not found
      */
-    static GetBrush(name) => this.Brushes.Get(name, 0)
+    static GetBrush(name) => this.Brushes.Has(name) ? this.Brushes[name] : 0
 
     /**
      * Updates a theme color and recreates its brush.
@@ -300,60 +125,9 @@ class DarkTheme {
      */
     static SetColor(name, value) {
         if this.Brushes.Has(name)
-            DllCall("DeleteObject", "Ptr", this.Brushes[name], "Void")
+            DllCall("DeleteObject", "Ptr", this.Brushes[name])
         this.Colors[name] := value
         this.Brushes[name] := DllCall("gdi32\CreateSolidBrush", "UInt", this.RGBtoBGR(value), "Ptr")
-        ; Value-keyed pens/brushes may encode the old color — drop them so the
-        ; repaint below rebuilds against the new palette.
-        this._FlushGdiCache()
-        this.Redraw()
-    }
-
-    /**
-     * Returns a cached solid brush for an RGB color (0xRRGGBB), created once and
-     * reused. Do NOT DeleteObject the result — DarkTheme owns it. Removes the
-     * per-WM_PAINT CreateSolidBrush/DeleteObject churn in owner-draw paint paths.
-     * @param {Integer} rgb - Color in 0xRRGGBB.
-     * @returns {Ptr} Shared GDI brush handle.
-     */
-    static GetSolidBrush(rgb) {
-        key := "b|" rgb
-        if this._GdiCache.Has(key)
-            return this._GdiCache[key]
-        return this._GdiCache[key] := DllCall("gdi32\CreateSolidBrush", "UInt", this.RGBtoBGR(rgb), "Ptr")
-    }
-
-    /**
-     * Returns a cached solid (PS_SOLID) pen for an RGB color and width, created
-     * once and reused. Do NOT DeleteObject the result — DarkTheme owns it.
-     * @param {Integer} rgb - Color in 0xRRGGBB.
-     * @param {Integer} [width=1] - Pen width in pixels.
-     * @returns {Ptr} Shared GDI pen handle.
-     */
-    static GetPen(rgb, width := 1) {
-        key := "p|" width "|" rgb
-        if this._GdiCache.Has(key)
-            return this._GdiCache[key]
-        return this._GdiCache[key] := DllCall("gdi32\CreatePen", "Int", 0, "Int", width, "UInt", this.RGBtoBGR(rgb), "Ptr")
-    }
-
-    /** Deletes every value-cached pen/brush and empties the cache. */
-    static _FlushGdiCache() {
-        for key, h in this._GdiCache
-            DllCall("DeleteObject", "Ptr", h, "Void")
-        this._GdiCache.Clear()
-    }
-
-    /**
-     * Forces a full repaint of every registered DarkGui window so palette/brush
-     * changes from {@link DarkTheme.SetColor} take effect immediately.
-     */
-    static Redraw() {
-        static RDW_FLAGS := 0x1 | 0x4 | 0x80 | 0x100  ; INVALIDATE | ERASE | ALLCHILDREN | UPDATENOW
-        for hwnd in this.Windows {
-            if DllCall("IsWindow", "Ptr", hwnd)
-                DllCall("RedrawWindow", "Ptr", hwnd, "Ptr", 0, "Ptr", 0, "UInt", RDW_FLAGS, "Void")
-        }
     }
 
     /**
@@ -392,9 +166,8 @@ class DarkTheme {
         static SWP_NOSIZE := 0x1
         static SWP_NOZORDER := 0x4
 
-        ; AutoHotkey64.exe is 64-bit only — always the Ptr variants.
-        GetWindowLong := "GetWindowLongPtr"
-        SetWindowLong := "SetWindowLongPtr"
+        GetWindowLong := A_PtrSize = 8 ? "GetWindowLongPtr" : "GetWindowLong"
+        SetWindowLong := A_PtrSize = 8 ? "SetWindowLongPtr" : "SetWindowLong"
 
         ; Remove WS_BORDER from style
         style := DllCall(GetWindowLong, "Ptr", hwnd, "Int", GWL_STYLE, "Ptr")
@@ -406,28 +179,22 @@ class DarkTheme {
 
         ; Force redraw with new frame
         DllCall("SetWindowPos", "Ptr", hwnd, "Ptr", 0, "Int", 0, "Int", 0, "Int", 0, "Int", 0,
-            "UInt", SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER, "Void")
+            "UInt", SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER)
     }
 
     /**
      * Calls undocumented AllowDarkModeForWindow (uxtheme ordinal 133).
      * Must be called BEFORE SetWindowTheme for dark mode to take effect on a control.
-     * Single source of truth — _DarkTab and DarkMenuBar delegate here rather than
-     * resolving ordinal 133 independently.
-     * @param {Ptr} hwnd - Control or window handle
-     * @param {Boolean} [allow=true] - Enable (true) or disable (false) dark mode for the window
+     * @param {Ptr} hwnd - Control window handle
      */
-    static AllowDarkMode(hwnd, allow := true) {
+    static AllowDarkMode(hwnd) {
         static fn := 0
         if !fn {
             uxtheme := DllCall("GetModuleHandle", "Str", "uxtheme", "Ptr")
-            if !uxtheme
-                uxtheme := DllCall("LoadLibrary", "Str", "uxtheme", "Ptr")
-            if uxtheme
-                fn := DllCall("GetProcAddress", "Ptr", uxtheme, "Ptr", 133, "Ptr")
+            fn := DllCall("GetProcAddress", "Ptr", uxtheme, "Ptr", 133, "Ptr")
         }
         if fn
-            DllCall(fn, "Ptr", hwnd, "Int", allow ? 1 : 0)
+            DllCall(fn, "Ptr", hwnd, "Int", true)
     }
 
     /**
@@ -436,9 +203,8 @@ class DarkTheme {
      */
     static Cleanup() {
         for name, brush in this.Brushes
-            DllCall("DeleteObject", "Ptr", brush, "Void")
+            DllCall("DeleteObject", "Ptr", brush)
         this.Brushes.Clear()
-        this._FlushGdiCache()
     }
 }
 
@@ -522,12 +288,81 @@ class DarkMenu {
 }
 
 /**
+ * Dark-themed tracking tooltip rendered via the Win32 `tooltips_class32` control.
+ * A single shared instance is reused; {@link DarkTooltip.Show} replaces any visible
+ * tip and schedules an auto-hide. Colors follow {@link DarkTheme.Colors}.
+ */
+class DarkTooltip {
+    /** @type {Ptr} Current tooltip window handle (0 when hidden) */
+    static hwnd := 0
+    /** @type {Func} Bound auto-hide timer callback (empty when none pending) */
+    static timer := ""
+
+    /**
+     * Shows a dark tooltip just below-right of the cursor.
+     * @param {String} text - Tooltip text.
+     * @param {Integer} [duration=2000] - Auto-hide delay in milliseconds.
+     */
+    static Show(text, duration := 2000) {
+        static TTS_NOPREFIX := 0x02, TTS_ALWAYSTIP := 0x01
+        static TTM_ADDTOOL := 0x432, TTM_SETTIPBKCOLOR := 0x413, TTM_SETTIPTEXTCOLOR := 0x414
+        static TTM_TRACKACTIVATE := 0x411, TTM_TRACKPOSITION := 0x412
+        static TTF_TRACK := 0x20, TTF_ABSOLUTE := 0x80
+
+        ; Replace any tip currently on screen
+        if this.hwnd {
+            DllCall("DestroyWindow", "Ptr", this.hwnd)
+            this.hwnd := 0
+        }
+
+        this.hwnd := DllCall("CreateWindowEx", "UInt", 0x8, "Str", "tooltips_class32", "Ptr", 0,
+            "UInt", TTS_NOPREFIX | TTS_ALWAYSTIP, "Int", 0, "Int", 0, "Int", 0, "Int", 0,
+            "Ptr", 0, "Ptr", 0, "Ptr", 0, "Ptr", 0, "Ptr")
+
+        SendMessage(TTM_SETTIPBKCOLOR, DarkTheme.RGBtoBGR(DarkTheme.Colors["Controls"]), 0, this.hwnd)
+        SendMessage(TTM_SETTIPTEXTCOLOR, DarkTheme.RGBtoBGR(DarkTheme.Colors["Font"]), 0, this.hwnd)
+
+        pt := Buffer(8)
+        DllCall("GetCursorPos", "Ptr", pt)
+        x := NumGet(pt, 0, "Int") + 16
+        y := NumGet(pt, 4, "Int") + 16
+        SendMessage(TTM_TRACKPOSITION, 0, (y << 16) | (x & 0xFFFF), this.hwnd)
+
+        tiSize := A_PtrSize = 8 ? 72 : 48
+        ti := Buffer(tiSize, 0)
+        NumPut("UInt", tiSize, ti, 0)
+        NumPut("UInt", TTF_TRACK | TTF_ABSOLUTE, ti, 4)
+        NumPut("Ptr", StrPtr(text), ti, A_PtrSize = 8 ? 48 : 36)
+
+        SendMessage(TTM_ADDTOOL, 0, ti.Ptr, this.hwnd)
+        SendMessage(TTM_TRACKACTIVATE, 1, ti.Ptr, this.hwnd)
+
+        ; Bound method (not a void fat-arrow) so the timer body stays value-returning
+        if this.timer
+            SetTimer(this.timer, 0)
+        this.timer := ObjBindMethod(this, "Hide")
+        SetTimer(this.timer, -duration)
+    }
+
+    /** Hides and destroys the current tooltip, if any. */
+    static Hide() {
+        if this.hwnd {
+            DllCall("DestroyWindow", "Ptr", this.hwnd)
+            this.hwnd := 0
+        }
+        if this.timer {
+            SetTimer(this.timer, 0)
+            this.timer := ""
+        }
+    }
+}
+
+/**
  * Utility class for window subclassing. Provides common pattern for installing
  * and uninstalling window procedure callbacks.
  */
 class Subclass {
-    ; AutoHotkey64.exe is 64-bit only — always the Ptr variant.
-    static SetWindowLong := "SetWindowLongPtr"
+    static SetWindowLong := A_PtrSize = 8 ? "SetWindowLongPtr" : "SetWindowLong"
 
     /**
      * Installs a window procedure callback on a control.
@@ -617,9 +452,6 @@ class DarkScrollbar {
         this.dragStartY := 0
         this.dragStartPos := 0
         this.isHovering := false
-        ; Last painted thumb extent, so the poll timer only repaints on real change.
-        this._lastThumbTop := -1
-        this._lastThumbBottom := -1
 
         ; Create the scrollbar as a Text control (we'll custom draw it)
         this.ctrl := gui.Add("Text", "x" x " y" y " w" this.w " h" h " +0x4000000")  ; WS_CLIPSIBLINGS
@@ -674,7 +506,7 @@ class DarkScrollbar {
 
         if msg = WM_MOUSELEAVE {
             this.isHovering := false
-            DllCall("InvalidateRect", "Ptr", hwnd, "Ptr", 0, "Int", 1, "Void")
+            DllCall("InvalidateRect", "Ptr", hwnd, "Ptr", 0, "Int", 1)
             return 0
         }
 
@@ -728,28 +560,33 @@ class DarkScrollbar {
     }
 
     Paint() {
-        ps := DM_PAINTSTRUCT()
-        hdc := DllCall("BeginPaint", "Ptr", this.ctrl.Hwnd, "Ptr", ps.Ptr, "Ptr")
+        static PAINTSTRUCT_SIZE := A_PtrSize = 8 ? 72 : 64
+        ps := Buffer(PAINTSTRUCT_SIZE, 0)
+        hdc := DllCall("BeginPaint", "Ptr", this.ctrl.Hwnd, "Ptr", ps, "Ptr")
 
         ; Get client rect
-        rc := DM_RECT()
+        rc := Buffer(16)
         DllCall("GetClientRect", "Ptr", this.ctrl.Hwnd, "Ptr", rc)
-        w := rc.right
-        h := rc.bottom
+        w := NumGet(rc, 8, "Int")
+        h := NumGet(rc, 12, "Int")
 
-        ; Draw track (cached brush — do not delete)
-        DllCall("FillRect", "Ptr", hdc, "Ptr", rc, "Ptr", DarkTheme.GetSolidBrush(this.trackColor), "Void")
+        ; Draw track
+        trackBrush := DllCall("CreateSolidBrush", "UInt", DarkTheme.RGBtoBGR(this.trackColor), "Ptr")
+        DllCall("FillRect", "Ptr", hdc, "Ptr", rc, "Ptr", trackBrush)
+        DllCall("DeleteObject", "Ptr", trackBrush)
 
         ; Draw thumb
         thumb := this.GetThumbRect()
         thumbColor := this.isHovering || this.isDragging ? this.thumbHoverColor : this.thumbColor
 
-        rcThumb := DM_RECT()
+        thumbBrush := DllCall("CreateSolidBrush", "UInt", DarkTheme.RGBtoBGR(thumbColor), "Ptr")
+        rcThumb := Buffer(16)
         pad := DarkTheme.Scale(2)
-        rcThumb.left := pad, rcThumb.top := thumb.top + pad, rcThumb.right := w - pad, rcThumb.bottom := thumb.bottom - pad
-        DllCall("FillRect", "Ptr", hdc, "Ptr", rcThumb, "Ptr", DarkTheme.GetSolidBrush(thumbColor), "Void")
+        NumPut("Int", pad, "Int", thumb.top + pad, "Int", w - pad, "Int", thumb.bottom - pad, rcThumb)
+        DllCall("FillRect", "Ptr", hdc, "Ptr", rcThumb, "Ptr", thumbBrush)
+        DllCall("DeleteObject", "Ptr", thumbBrush)
 
-        DllCall("EndPaint", "Ptr", this.ctrl.Hwnd, "Ptr", ps.Ptr, "Void")
+        DllCall("EndPaint", "Ptr", this.ctrl.Hwnd, "Ptr", ps)
     }
 
     OnMouseDown(lParam) {
@@ -770,24 +607,24 @@ class DarkScrollbar {
             this.isDragging := true
             this.dragStartY := mouseY
             this.dragStartPos := this.GetScrollInfo().pos
-            DllCall("SetCapture", "Ptr", this.ctrl.Hwnd, "Void")
+            DllCall("SetCapture", "Ptr", this.ctrl.Hwnd)
         }
 
-        DllCall("InvalidateRect", "Ptr", this.ctrl.Hwnd, "Ptr", 0, "Int", 1, "Void")
+        DllCall("InvalidateRect", "Ptr", this.ctrl.Hwnd, "Ptr", 0, "Int", 1)
 
         ; Track mouse for hover effects
-        tme := DM_TRACKMOUSEEVENT()
-        tme.cbSize    := tme.Size
-        tme.dwFlags   := 2  ; TME_LEAVE
-        tme.hwndTrack := this.ctrl.Hwnd
-        DllCall("TrackMouseEvent", "Ptr", tme.Ptr, "Void")
+        tme := Buffer(A_PtrSize = 8 ? 24 : 16, 0)
+        NumPut("UInt", A_PtrSize = 8 ? 24 : 16, tme, 0)
+        NumPut("UInt", 2, tme, 4)  ; TME_LEAVE
+        NumPut("Ptr", this.ctrl.Hwnd, tme, 8)
+        DllCall("TrackMouseEvent", "Ptr", tme)
     }
 
     OnMouseUp() {
         if this.isDragging {
             this.isDragging := false
-            DllCall("ReleaseCapture", "Void")
-            DllCall("InvalidateRect", "Ptr", this.ctrl.Hwnd, "Ptr", 0, "Int", 1, "Void")
+            DllCall("ReleaseCapture")
+            DllCall("InvalidateRect", "Ptr", this.ctrl.Hwnd, "Ptr", 0, "Int", 1)
         }
     }
 
@@ -799,12 +636,12 @@ class DarkScrollbar {
         ; Track mouse for hover effects
         if !this.isHovering {
             this.isHovering := true
-            tme := DM_TRACKMOUSEEVENT()
-            tme.cbSize    := tme.Size
-            tme.dwFlags   := 2  ; TME_LEAVE
-            tme.hwndTrack := this.ctrl.Hwnd
-            DllCall("TrackMouseEvent", "Ptr", tme.Ptr, "Void")
-            DllCall("InvalidateRect", "Ptr", this.ctrl.Hwnd, "Ptr", 0, "Int", 1, "Void")
+            tme := Buffer(A_PtrSize = 8 ? 24 : 16, 0)
+            NumPut("UInt", A_PtrSize = 8 ? 24 : 16, tme, 0)
+            NumPut("UInt", 2, tme, 4)  ; TME_LEAVE
+            NumPut("Ptr", this.ctrl.Hwnd, tme, 8)
+            DllCall("TrackMouseEvent", "Ptr", tme)
+            DllCall("InvalidateRect", "Ptr", this.ctrl.Hwnd, "Ptr", 0, "Int", 1)
         }
 
         if this.isDragging {
@@ -852,21 +689,13 @@ class DarkScrollbar {
         ; Scroll to make the item at position visible at the top
         SendMessage(LVM_ENSUREVISIBLE, pos, 0, this.target.Hwnd)
 
-        DllCall("InvalidateRect", "Ptr", this.ctrl.Hwnd, "Ptr", 0, "Int", 1, "Void")
+        DllCall("InvalidateRect", "Ptr", this.ctrl.Hwnd, "Ptr", 0, "Int", 1)
     }
 
     SyncFromTarget() {
-        ; Repaint only when the thumb actually moved. The 100ms poll previously
-        ; forced a full InvalidateRect ~10x/sec even on a static list; hover-state
-        ; repaints are driven separately by the mouse handlers.
-        if this.isDragging
-            return
-        thumb := this.GetThumbRect()
-        if thumb.top = this._lastThumbTop && thumb.bottom = this._lastThumbBottom
-            return
-        this._lastThumbTop := thumb.top
-        this._lastThumbBottom := thumb.bottom
-        DllCall("InvalidateRect", "Ptr", this.ctrl.Hwnd, "Ptr", 0, "Int", 1, "Void")
+        ; Update our display to match target's scroll position
+        if !this.isDragging
+            DllCall("InvalidateRect", "Ptr", this.ctrl.Hwnd, "Ptr", 0, "Int", 1)
     }
 
     /**
@@ -952,21 +781,21 @@ class _DarkListView extends Gui.ListView {
      */
     static SetArrowClipRegion(hwnd) {
         static OBJID_VSCROLL := -5
-        sbi := DM_SCROLLBARINFO()
-        sbi.cbSize := sbi.Size
-        if !DllCall("GetScrollBarInfo", "Ptr", hwnd, "Int", OBJID_VSCROLL, "Ptr", sbi.Ptr)
+        sbi := Buffer(60, 0)
+        NumPut("UInt", 60, sbi, 0)
+        if !DllCall("GetScrollBarInfo", "Ptr", hwnd, "Int", OBJID_VSCROLL, "Ptr", sbi)
             return false
-        if sbi.rgstate[1] & 0x8000  ; STATE_SYSTEM_INVISIBLE on the scrollbar itself
+        if NumGet(sbi, 36, "UInt") & 0x8000
             return false
 
-        sbL := sbi.rcScrollBar.left,  sbT := sbi.rcScrollBar.top
-        sbR := sbi.rcScrollBar.right, sbB := sbi.rcScrollBar.bottom
+        sbL := NumGet(sbi, 4, "Int"), sbT := NumGet(sbi, 8, "Int")
+        sbR := NumGet(sbi, 12, "Int"), sbB := NumGet(sbi, 16, "Int")
         arrowH := DllCall("GetSystemMetrics", "Int", 20)
 
-        rcWin := DM_RECT()
+        rcWin := Buffer(16)
         DllCall("GetWindowRect", "Ptr", hwnd, "Ptr", rcWin)
-        winL := rcWin.left, winT := rcWin.top
-        w := rcWin.right - winL, h := rcWin.bottom - winT
+        winL := NumGet(rcWin, 0, "Int"), winT := NumGet(rcWin, 4, "Int")
+        w := NumGet(rcWin, 8, "Int") - winL, h := NumGet(rcWin, 12, "Int") - winT
 
         ; Window-relative arrow coords
         aL := sbL - winL, aR := sbR - winL
@@ -976,14 +805,14 @@ class _DarkListView extends Gui.ListView {
         ; Full window region minus arrow rects
         fullRgn := DllCall("CreateRectRgn", "Int", 0, "Int", 0, "Int", w, "Int", h, "Ptr")
         topRgn := DllCall("CreateRectRgn", "Int", aL, "Int", aTopT, "Int", aR, "Int", aTopB, "Ptr")
-        DllCall("CombineRgn", "Ptr", fullRgn, "Ptr", fullRgn, "Ptr", topRgn, "Int", 4, "Void")  ; RGN_DIFF
-        DllCall("DeleteObject", "Ptr", topRgn, "Void")
+        DllCall("CombineRgn", "Ptr", fullRgn, "Ptr", fullRgn, "Ptr", topRgn, "Int", 4)  ; RGN_DIFF
+        DllCall("DeleteObject", "Ptr", topRgn)
         botRgn := DllCall("CreateRectRgn", "Int", aL, "Int", aBotT, "Int", aR, "Int", aBotB, "Ptr")
-        DllCall("CombineRgn", "Ptr", fullRgn, "Ptr", fullRgn, "Ptr", botRgn, "Int", 4, "Void")  ; RGN_DIFF
-        DllCall("DeleteObject", "Ptr", botRgn, "Void")
+        DllCall("CombineRgn", "Ptr", fullRgn, "Ptr", fullRgn, "Ptr", botRgn, "Int", 4)  ; RGN_DIFF
+        DllCall("DeleteObject", "Ptr", botRgn)
 
         ; System takes ownership of fullRgn - don't delete it
-        DllCall("SetWindowRgn", "Ptr", hwnd, "Ptr", fullRgn, "Int", 0, "Void")
+        DllCall("SetWindowRgn", "Ptr", hwnd, "Ptr", fullRgn, "Int", 0)
         return true
     }
 
@@ -993,7 +822,7 @@ class _DarkListView extends Gui.ListView {
      * @param {Ptr} hwnd - Window handle.
      */
     static ClearArrowClipRegion(hwnd) {
-        DllCall("SetWindowRgn", "Ptr", hwnd, "Ptr", 0, "Int", 0, "Void")
+        DllCall("SetWindowRgn", "Ptr", hwnd, "Ptr", 0, "Int", 0)
     }
 
     /**
@@ -1005,40 +834,40 @@ class _DarkListView extends Gui.ListView {
      */
     static ClipArrowRegion(hwnd, wParam) {
         static OBJID_VSCROLL := -5
-        sbi := DM_SCROLLBARINFO()
-        sbi.cbSize := sbi.Size
-        if !DllCall("GetScrollBarInfo", "Ptr", hwnd, "Int", OBJID_VSCROLL, "Ptr", sbi.Ptr)
+        sbi := Buffer(60, 0)
+        NumPut("UInt", 60, sbi, 0)
+        if !DllCall("GetScrollBarInfo", "Ptr", hwnd, "Int", OBJID_VSCROLL, "Ptr", sbi)
             return 0
-        if sbi.rgstate[1] & 0x8000  ; STATE_SYSTEM_INVISIBLE
+        if NumGet(sbi, 36, "UInt") & 0x8000  ; STATE_SYSTEM_INVISIBLE
             return 0
 
         ; Scrollbar rect in screen coords
-        sbL := sbi.rcScrollBar.left,  sbT := sbi.rcScrollBar.top
-        sbR := sbi.rcScrollBar.right, sbB := sbi.rcScrollBar.bottom
+        sbL := NumGet(sbi, 4, "Int"), sbT := NumGet(sbi, 8, "Int")
+        sbR := NumGet(sbi, 12, "Int"), sbB := NumGet(sbi, 16, "Int")
         arrowH := DllCall("GetSystemMetrics", "Int", 20)  ; SM_CYVSCROLL
 
         ; Build base region from wParam
         if wParam = 1 {
-            rcWin := DM_RECT()
+            rcWin := Buffer(16)
             DllCall("GetWindowRect", "Ptr", hwnd, "Ptr", rcWin)
             hrgn := DllCall("CreateRectRgn",
-                "Int", rcWin.left, "Int", rcWin.top,
-                "Int", rcWin.right, "Int", rcWin.bottom, "Ptr")
+                "Int", NumGet(rcWin, 0, "Int"), "Int", NumGet(rcWin, 4, "Int"),
+                "Int", NumGet(rcWin, 8, "Int"), "Int", NumGet(rcWin, 12, "Int"), "Ptr")
         } else {
             ; Copy - must not modify the original region
             hrgn := DllCall("CreateRectRgn", "Int", 0, "Int", 0, "Int", 0, "Int", 0, "Ptr")
-            DllCall("CombineRgn", "Ptr", hrgn, "Ptr", wParam, "Ptr", hrgn, "Int", 5, "Void")  ; RGN_COPY
+            DllCall("CombineRgn", "Ptr", hrgn, "Ptr", wParam, "Ptr", hrgn, "Int", 5)  ; RGN_COPY
         }
 
         ; Subtract top arrow region (screen coords)
         topRgn := DllCall("CreateRectRgn", "Int", sbL, "Int", sbT, "Int", sbR, "Int", sbT + arrowH, "Ptr")
-        DllCall("CombineRgn", "Ptr", hrgn, "Ptr", hrgn, "Ptr", topRgn, "Int", 4, "Void")  ; RGN_DIFF
-        DllCall("DeleteObject", "Ptr", topRgn, "Void")
+        DllCall("CombineRgn", "Ptr", hrgn, "Ptr", hrgn, "Ptr", topRgn, "Int", 4)  ; RGN_DIFF
+        DllCall("DeleteObject", "Ptr", topRgn)
 
         ; Subtract bottom arrow region (screen coords)
         botRgn := DllCall("CreateRectRgn", "Int", sbL, "Int", sbB - arrowH, "Int", sbR, "Int", sbB, "Ptr")
-        DllCall("CombineRgn", "Ptr", hrgn, "Ptr", hrgn, "Ptr", botRgn, "Int", 4, "Void")  ; RGN_DIFF
-        DllCall("DeleteObject", "Ptr", botRgn, "Void")
+        DllCall("CombineRgn", "Ptr", hrgn, "Ptr", hrgn, "Ptr", botRgn, "Int", 4)  ; RGN_DIFF
+        DllCall("DeleteObject", "Ptr", botRgn)
 
         return hrgn
     }
@@ -1050,20 +879,20 @@ class _DarkListView extends Gui.ListView {
      */
     static HideScrollbarArrows(hwnd, headerHwnd := 0) {
         static OBJID_VSCROLL := -5
-        sbi := DM_SCROLLBARINFO()
-        sbi.cbSize := sbi.Size
-        if !DllCall("GetScrollBarInfo", "Ptr", hwnd, "Int", OBJID_VSCROLL, "Ptr", sbi.Ptr)
+        sbi := Buffer(60, 0)
+        NumPut("UInt", 60, sbi, 0)
+        if !DllCall("GetScrollBarInfo", "Ptr", hwnd, "Int", OBJID_VSCROLL, "Ptr", sbi)
             return
-        if sbi.rgstate[1] & 0x8000
+        if NumGet(sbi, 36, "UInt") & 0x8000
             return
 
-        sbLeft  := sbi.rcScrollBar.left,  sbTop    := sbi.rcScrollBar.top
-        sbRight := sbi.rcScrollBar.right, sbBottom := sbi.rcScrollBar.bottom
+        sbLeft := NumGet(sbi, 4, "Int"), sbTop := NumGet(sbi, 8, "Int")
+        sbRight := NumGet(sbi, 12, "Int"), sbBottom := NumGet(sbi, 16, "Int")
         arrowHeight := DllCall("GetSystemMetrics", "Int", 20)
 
-        rcWin := DM_RECT()
+        rcWin := Buffer(16)
         DllCall("GetWindowRect", "Ptr", hwnd, "Ptr", rcWin)
-        winLeft := rcWin.left, winTop := rcWin.top
+        winLeft := NumGet(rcWin, 0, "Int"), winTop := NumGet(rcWin, 4, "Int")
 
         ; Convert to window-relative coords
         sbLeftW := sbLeft - winLeft, sbTopW := sbTop - winTop
@@ -1073,16 +902,17 @@ class _DarkListView extends Gui.ListView {
         if !hdc
             return
 
-        trackBrush := DarkTheme.GetBrush("ScrollTrack")  ; cached — do not delete
-        rc := DM_RECT()
+        trackBrush := DllCall("CreateSolidBrush", "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["ScrollTrack"]), "Ptr")
+        rc := Buffer(16)
 
-        rc.left := sbLeftW, rc.top := sbTopW, rc.right := sbRightW, rc.bottom := sbTopW + arrowHeight
-        DllCall("FillRect", "Ptr", hdc, "Ptr", rc, "Ptr", trackBrush, "Void")
+        NumPut("Int", sbLeftW, "Int", sbTopW, "Int", sbRightW, "Int", sbTopW + arrowHeight, rc)
+        DllCall("FillRect", "Ptr", hdc, "Ptr", rc, "Ptr", trackBrush)
 
-        rc.left := sbLeftW, rc.top := sbBottomW - arrowHeight, rc.right := sbRightW, rc.bottom := sbBottomW
-        DllCall("FillRect", "Ptr", hdc, "Ptr", rc, "Ptr", trackBrush, "Void")
+        NumPut("Int", sbLeftW, "Int", sbBottomW - arrowHeight, "Int", sbRightW, "Int", sbBottomW, rc)
+        DllCall("FillRect", "Ptr", hdc, "Ptr", rc, "Ptr", trackBrush)
 
-        DllCall("ReleaseDC", "Ptr", hwnd, "Ptr", hdc, "Void")
+        DllCall("DeleteObject", "Ptr", trackBrush)
+        DllCall("ReleaseDC", "Ptr", hwnd, "Ptr", hdc)
     }
 
     static ListViewProc(targetHwnd, hwnd, msg, wParam, lParam) {
@@ -1104,16 +934,16 @@ class _DarkListView extends Gui.ListView {
             return Subclass.CallOriginal(this.OldProcs[targetHwnd], hwnd, msg, wParam, lParam)
 
         ; Get header handle for proper alignment
-        headerHwnd := this.HeaderHandles.Get(hwnd, 0)
+        headerHwnd := this.HeaderHandles.Has(hwnd) ? this.HeaderHandles[hwnd] : 0
 
         ; Handle NC paint - clip arrow regions BEFORE default paint
         if msg = WM_NCPAINT {
             clippedRgn := _DarkListView.ClipArrowRegion(hwnd, wParam)
-            result := Subclass.CallOriginal(this.OldProcs[targetHwnd], hwnd, msg, clippedRgn || wParam, lParam)
+            result := Subclass.CallOriginal(this.OldProcs[targetHwnd], hwnd, msg, clippedRgn ? clippedRgn : wParam, lParam)
             ; Fill excluded arrow areas with track color
             _DarkListView.HideScrollbarArrows(hwnd, headerHwnd)
             if clippedRgn
-                DllCall("DeleteObject", "Ptr", clippedRgn, "Void")
+                DllCall("DeleteObject", "Ptr", clippedRgn)
             return result
         }
 
@@ -1128,7 +958,7 @@ class _DarkListView extends Gui.ListView {
                     timerFn := _DarkListView.CreateArrowHideTimerFunc(hwnd, headerHwnd)
                     this.HoverTimerFuncs[hwnd] := timerFn
                     this.HoverTimers[hwnd] := true
-                    SetTimer(timerFn, 30)  ; ~33fps — enough to mask arrow repaints at much lower churn than 16ms/60fps
+                    SetTimer(timerFn, 16)  ; ~60fps to cover scrollbar arrow repaints
                 }
                 _DarkListView.HideScrollbarArrows(hwnd, headerHwnd)
             } else {
@@ -1264,10 +1094,10 @@ class _DarkListView extends Gui.ListView {
             static CDIS_SELECTED := 0x1
             static CDIS_FOCUS := 0x10
 
-            if (DM_NMHDR.At(lParam).code != NM_CUSTOMDRAW)
+            if (_DM_NMHDR.At(lParam).code != NM_CUSTOMDRAW)
                 return
 
-            nmcd := DM_NMCUSTOMDRAW.At(lParam)
+            nmcd := _DM_NMCD.At(lParam)
 
             ; Handle header custom draw
             if (nmcd.hdr.hwndFrom = lv.Header) {
@@ -1278,29 +1108,31 @@ class _DarkListView extends Gui.ListView {
                         hdc := nmcd.hdc
                         itemIndex := nmcd.dwItemSpec
 
-                        rc := DM_RECT()
+                        rc := Buffer(16, 0)
                         SendMessage(HDM_GETITEMRECT, itemIndex, rc.Ptr, lv.Header)
 
-                        DllCall("FillRect", "Ptr", hdc, "Ptr", rc, "Ptr", DarkTheme.GetBrush("Background"), "Void")
+                        hBrush := DllCall("CreateSolidBrush", "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Background"]), "Ptr")
+                        DllCall("FillRect", "Ptr", hdc, "Ptr", rc, "Ptr", hBrush)
+                        DllCall("DeleteObject", "Ptr", hBrush)
 
                         textBuf := Buffer(256, 0)
-                        hdItem := DM_HDITEMW()
-                        hdItem.mask       := HDI_TEXT
-                        hdItem.pszText    := textBuf.Ptr
-                        hdItem.cchTextMax := 128
+                        hdItem := Buffer(A_PtrSize = 8 ? 72 : 48, 0)
+                        NumPut("UInt", HDI_TEXT, hdItem, 0)
+                        NumPut("Ptr", textBuf.Ptr, hdItem, 8)
+                        NumPut("Int", 128, hdItem, A_PtrSize = 8 ? 24 : 16)
                         SendMessage(HDM_GETITEM, itemIndex, hdItem.Ptr, lv.Header)
 
-                        DllCall("SetTextColor", "Ptr", hdc, "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Font"]), "Void")
-                        DllCall("SetBkMode", "Ptr", hdc, "Int", 1, "Void")
+                        DllCall("SetTextColor", "Ptr", hdc, "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Font"]))
+                        DllCall("SetBkMode", "Ptr", hdc, "Int", 1)
 
-                        left := rc.left + DarkTheme.Scale(8)
-                        top := rc.top
-                        right := rc.right - DarkTheme.Scale(4)
-                        bottom := rc.bottom
-                        rcText := DM_RECT()
-                        rcText.left := left, rcText.top := top, rcText.right := right, rcText.bottom := bottom
+                        left := NumGet(rc, 0, "Int") + DarkTheme.Scale(8)
+                        top := NumGet(rc, 4, "Int")
+                        right := NumGet(rc, 8, "Int") - DarkTheme.Scale(4)
+                        bottom := NumGet(rc, 12, "Int")
+                        rcText := Buffer(16, 0)
+                        NumPut("Int", left, "Int", top, "Int", right, "Int", bottom, rcText)
 
-                        DllCall("DrawTextW", "Ptr", hdc, "Ptr", textBuf.Ptr, "Int", -1, "Ptr", rcText, "UInt", DT_VCENTER | DT_SINGLELINE, "Void")
+                        DllCall("DrawTextW", "Ptr", hdc, "Ptr", textBuf.Ptr, "Int", -1, "Ptr", rcText, "UInt", DT_VCENTER | DT_SINGLELINE)
 
                         return CDRF_SKIPDEFAULT
                 }
@@ -1317,11 +1149,11 @@ class _DarkListView extends Gui.ListView {
 
                         if isSelected {
                             ; Keep selection blue even when ListView loses focus
-                            DllCall("SetTextColor", "Ptr", nmcd.hdc, "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Font"]), "Void")
-                            DllCall("SetBkColor", "Ptr", nmcd.hdc, "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Selection"]), "Void")
+                            DllCall("SetTextColor", "Ptr", nmcd.hdc, "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Font"]))
+                            DllCall("SetBkColor", "Ptr", nmcd.hdc, "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Selection"]))
                         } else {
-                            DllCall("SetTextColor", "Ptr", nmcd.hdc, "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Font"]), "Void")
-                            DllCall("SetBkColor", "Ptr", nmcd.hdc, "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Controls"]), "Void")
+                            DllCall("SetTextColor", "Ptr", nmcd.hdc, "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Font"]))
+                            DllCall("SetBkColor", "Ptr", nmcd.hdc, "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Controls"]))
                         }
                         return CDRF_NEWFONT
                 }
@@ -1369,49 +1201,52 @@ class _DarkListView extends Gui.ListView {
             return
 
         ; Query the theme for the actual checkbox glyph size
-        sz := DM_SIZE()
+        szBuf := Buffer(8, 0)
         DllCall("uxtheme\GetThemePartSize", "Ptr", hTheme, "Ptr", 0,
-            "Int", BP_CHECKBOX, "Int", CBS_CHECKEDNORMAL, "Ptr", 0, "Int", 1, "Ptr", sz.Ptr)
-        glyphW := sz.cx
-        glyphH := sz.cy
+            "Int", BP_CHECKBOX, "Int", CBS_CHECKEDNORMAL, "Ptr", 0, "Int", 1, "Ptr", szBuf)
+        glyphW := NumGet(szBuf, 0, "Int")
+        glyphH := NumGet(szBuf, 4, "Int")
 
         ; Use glyph size with padding for the ImageList
         cxImg := glyphW + 4
         cyImg := glyphH + 4
 
-        hIml := DllCall("comctl32\ImageList_Create", "Int", cxImg, "Int", cyImg, "UInt", ILC_COLOR32, "Int", 3, "Int", 1, "Ptr")
+        hIml := DllCall("comctl32\ImageList_Create", "Int", cxImg, "Int", cyImg, "UInt", ILC_COLOR32, "Int", 2, "Int", 1, "Ptr")
 
-        ; State 0 = blank, State 1 = unchecked, State 2 = checked
-        states := [0, CBS_UNCHECKEDNORMAL, CBS_CHECKEDNORMAL]
+        ; Standard 2-image state list: index 0 = unchecked, index 1 = checked.
+        ; The LVITEM state-image value is 1-based (1 -> unchecked, 2 -> checked),
+        ; which is what LVS_EX_CHECKBOXES, GetNext("C") and click-toggle expect.
+        ; A 3rd "blank" image here shifts every index and breaks all three.
+        states := [CBS_UNCHECKEDNORMAL, CBS_CHECKEDNORMAL]
 
         for stateVal in states {
             hdcScreen := DllCall("GetDC", "Ptr", 0, "Ptr")
             hdc := DllCall("CreateCompatibleDC", "Ptr", hdcScreen, "Ptr")
             hBmp := DllCall("CreateCompatibleBitmap", "Ptr", hdcScreen, "Int", cxImg, "Int", cyImg, "Ptr")
             hOld := DllCall("SelectObject", "Ptr", hdc, "Ptr", hBmp, "Ptr")
-            DllCall("ReleaseDC", "Ptr", 0, "Ptr", hdcScreen, "Void")
+            DllCall("ReleaseDC", "Ptr", 0, "Ptr", hdcScreen)
 
             ; Fill background with ListView body color
-            rc := DM_RECT()
-            rc.left := 0, rc.top := 0, rc.right := cxImg, rc.bottom := cyImg
+            rc := Buffer(16)
+            NumPut("Int", 0, "Int", 0, "Int", cxImg, "Int", cyImg, rc)
             bgBrush := DllCall("CreateSolidBrush", "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Controls"]), "Ptr")
-            DllCall("FillRect", "Ptr", hdc, "Ptr", rc, "Ptr", bgBrush, "Void")
-            DllCall("DeleteObject", "Ptr", bgBrush, "Void")
+            DllCall("FillRect", "Ptr", hdc, "Ptr", rc, "Ptr", bgBrush)
+            DllCall("DeleteObject", "Ptr", bgBrush)
 
             ; Draw the native themed checkbox glyph (skip for state 0 = blank)
             if stateVal > 0 {
-                glyphRC := DM_RECT()
+                glyphRC := Buffer(16)
                 glyphX := (cxImg - glyphW) // 2
                 glyphY := (cyImg - glyphH) // 2
-                glyphRC.left := glyphX, glyphRC.top := glyphY, glyphRC.right := glyphX + glyphW, glyphRC.bottom := glyphY + glyphH
+                NumPut("Int", glyphX, "Int", glyphY, "Int", glyphX + glyphW, "Int", glyphY + glyphH, glyphRC)
                 DllCall("uxtheme\DrawThemeBackground", "Ptr", hTheme, "Ptr", hdc,
                     "Int", BP_CHECKBOX, "Int", stateVal, "Ptr", glyphRC, "Ptr", 0)
             }
 
-            DllCall("SelectObject", "Ptr", hdc, "Ptr", hOld, "Void")
+            DllCall("SelectObject", "Ptr", hdc, "Ptr", hOld)
             DllCall("comctl32\ImageList_Add", "Ptr", hIml, "Ptr", hBmp, "Ptr", 0)
-            DllCall("DeleteObject", "Ptr", hBmp, "Void")
-            DllCall("DeleteDC", "Ptr", hdc, "Void")
+            DllCall("DeleteObject", "Ptr", hBmp)
+            DllCall("DeleteDC", "Ptr", hdc)
         }
 
         DllCall("uxtheme\CloseThemeData", "Ptr", hTheme)
@@ -1428,7 +1263,7 @@ class _DarkListView extends Gui.ListView {
         hwnd := lv.Hwnd
         cb := CallbackCreate(ObjBindMethod(this, "CheckboxSubclassProc"), , 6)
         this._CheckboxSubclassCallbacks[hwnd] := cb
-        DllCall("SetWindowSubclass", "Ptr", hwnd, "Ptr", cb, "Ptr", hwnd, "Ptr", 0, "Void")
+        DllCall("SetWindowSubclass", "Ptr", hwnd, "Ptr", cb, "Ptr", hwnd, "Ptr", 0)
 
         ; Fix any existing rows with state 0
         static LVM_GETITEMCOUNT := 0x1004
@@ -1440,11 +1275,10 @@ class _DarkListView extends Gui.ListView {
             idx := A_Index - 1
             curState := SendMessage(0x102C, idx, LVIS_STATEIMAGEMASK, lv)  ; LVM_GETITEMSTATE
             if (curState & 0xF000) = 0 {
-                ; LVM_SETITEMSTATE reads only state (offset 12) and stateMask (offset 16);
-                ; the item index comes from wParam, so iItem/iSubItem are ignored here.
-                lvItem := DM_LVITEMW()
-                lvItem.state     := 0x1000
-                lvItem.stateMask := LVIS_STATEIMAGEMASK
+                ; LVITEM: state at offset 12, stateMask at offset 16.
+                lvItem := Buffer(A_PtrSize = 8 ? 88 : 60, 0)
+                NumPut("UInt", 0x1000, lvItem, 12)               ; state: stateImage 1 (unchecked)
+                NumPut("UInt", LVIS_STATEIMAGEMASK, lvItem, 16)  ; stateMask
                 SendMessage(LVM_SETITEMSTATE, idx, lvItem.Ptr, lv)
             }
         }
@@ -1457,25 +1291,25 @@ class _DarkListView extends Gui.ListView {
         static LVIS_STATEIMAGEMASK := 0xF000
         static WM_DESTROY := 0x0002
 
-        ; Intercept item insertion — if state image is 0 (blank), set to 1 (unchecked).
-        ; Overlay the incoming DM_LVITEMW so the real field offsets (state=12, stateMask=16)
-        ; are used; the earlier raw-offset math clobbered iItem/iSubItem instead.
-        static LVIF_STATE := 0x8
+        ; Intercept item insertion — if state image is 0 (blank), set to 1 (unchecked)
         if msg = LVM_INSERTITEMA || msg = LVM_INSERTITEMW {
             if lParam {
-                item := DM_LVITEMW.At(lParam)
-                if ((item.state & 0xF000) >> 12) = 0 {
-                    ; LVM_INSERTITEM only honors state when LVIF_STATE is in mask
-                    item.mask      |= LVIF_STATE
-                    item.state     |= 0x1000
-                    item.stateMask |= LVIS_STATEIMAGEMASK
+                ; LVITEM: mask @0, state @12, stateMask @16.
+                state := NumGet(lParam, 12, "UInt")
+                stateImg := (state & 0xF000) >> 12
+                if stateImg = 0 {
+                    ; Force unchecked (stateImage 1) and flag LVIF_STATE so the
+                    ; control honors the state fields on insertion.
+                    NumPut("UInt", NumGet(lParam, 0, "UInt") | 0x8, lParam, 0)               ; LVIF_STATE
+                    NumPut("UInt", (state & ~0xF000) | 0x1000, lParam, 12)                   ; stateImage 1
+                    NumPut("UInt", NumGet(lParam, 16, "UInt") | LVIS_STATEIMAGEMASK, lParam, 16)
                 }
             }
         }
 
         if msg = WM_DESTROY {
             if _DarkListView._CheckboxSubclassCallbacks.Has(hwnd) {
-                DllCall("RemoveWindowSubclass", "Ptr", hwnd, "Ptr", _DarkListView._CheckboxSubclassCallbacks[hwnd], "Ptr", hwnd, "Void")
+                DllCall("RemoveWindowSubclass", "Ptr", hwnd, "Ptr", _DarkListView._CheckboxSubclassCallbacks[hwnd], "Ptr", hwnd)
                 CallbackFree(_DarkListView._CheckboxSubclassCallbacks[hwnd])
                 _DarkListView._CheckboxSubclassCallbacks.Delete(hwnd)
             }
@@ -1497,41 +1331,38 @@ class _DarkButton extends Gui.Button {
         super.Prototype.SetDarkMode := ObjBindMethod(this, "ApplyDarkMode")
     }
 
-    /**
-     * Per-button state — one object per hwnd in {@link _DarkButton.State},
-     * replacing the former 14 parallel hwnd-keyed maps (one lookup and one
-     * delete instead of fourteen, and impossible to forget a map on cleanup).
-     */
-    class BtnState {
-        btn := 0             ; the Gui.Button instance
-        text := ""           ; cached button caption
-        mode := "default"    ; default|accent|icon|split|command|toggle|flat
-        hover := false       ; mouse over the control
-        pressed := false     ; mouse/space currently pressing
-        focus := false       ; holds keyboard focus (drives the focus ring)
-        icon := 0            ; HICON for icon/command buttons (0 = none)
-        iconOwned := false   ; true if we loaded it and must DestroyIcon on Remove
-        iconAlign := "left"  ; left|right|top|center
-        menu := 0            ; split-button Menu shown on arrow click (0 = none)
-        onDropdown := 0      ; split-button dropdown callback, alt to menu (0 = none)
-        desc := ""           ; command-link description text
-        toggle := false      ; latched on/off state for toggle buttons
-        hoverArrow := false  ; mouse over the split dropdown-arrow region
-    }
-
-    /** @type {Map} hwnd -> {@link _DarkButton.BtnState} */
-    static State := Map()
-    /** @type {Map} Window procedure callbacks (shared Subclass infrastructure) */
+    /** @type {Map} Button control instances keyed by hwnd */
+    static Instances := Map()
+    /** @type {Map} Window procedure callbacks */
     static Callbacks := Map()
-    /** @type {Map} Original window procedures for restoration (Subclass infrastructure) */
+    /** @type {Map} Original window procedures for restoration */
     static OldProcs := Map()
-
-    /** Returns the BtnState for hwnd, creating it on first use. */
-    static _State(hwnd) {
-        if !this.State.Has(hwnd)
-            this.State[hwnd] := _DarkButton.BtnState()
-        return this.State[hwnd]
-    }
+    /** @type {Map} Cached button text strings */
+    static ButtonTexts := Map()
+    /** @type {Map} Mouse hover state flags */
+    static HoverStates := Map()
+    /** @type {Map} Button rendering mode: "default", "accent", "icon", "split", "command", "toggle", or "flat" */
+    static ButtonModes := Map()
+    /** @type {Map} Mouse pressed state flags */
+    static PressedStates := Map()
+    /** @type {Map} HICON per hwnd for icon/command-link buttons (0 if none) */
+    static Icons := Map()
+    /** @type {Map} Whether the icon was loaded by us and needs DestroyIcon on Remove */
+    static IconOwned := Map()
+    /** @type {Map} Icon alignment: "left" | "right" | "top" | "center" */
+    static IconAligns := Map()
+    /** @type {Map} Menu object shown when split-button arrow is clicked */
+    static Menus := Map()
+    /** @type {Map} Callback invoked when split-button arrow is clicked (alternative to Menus) */
+    static OnDropdownCbs := Map()
+    /** @type {Map} Description text for command-link buttons */
+    static Descriptions := Map()
+    /** @type {Map} Latched on/off state for toggle buttons */
+    static ToggleStates := Map()
+    /** @type {Map} True when mouse is over the dropdown-arrow region of a split button */
+    static HoverArrow := Map()
+    /** @type {Map} True while the button holds keyboard focus (drives the focus ring) */
+    static FocusStates := Map()
 
     /**
      * Applies owner-draw dark mode to button.
@@ -1540,17 +1371,18 @@ class _DarkButton extends Gui.Button {
      */
     static ApplyDarkMode(btn, mode := "default") {
         hwnd := btn.Hwnd
-        s := this._State(hwnd)
-        s.btn := btn
         ; Idempotent: factories may go gui.Add → DarkGui.Add → ApplyDarkMode("default")
-        ; then re-call ApplyDarkMode("icon"|"split"|...). Only install the subclass
-        ; and capture the caption once (BtnState defaults cover the rest).
+        ; then re-call ApplyDarkMode("icon"|"split"|...). Only install the subclass once.
         if !this.OldProcs.Has(hwnd) {
-            s.text := btn.Text
+            this.ButtonTexts[hwnd] := btn.Text
+            this.HoverStates[hwnd] := false
+            this.PressedStates[hwnd] := false
+            this.FocusStates[hwnd] := false
+            this.Instances[hwnd] := btn
             Subclass.Install(hwnd, ObjBindMethod(this, "ButtonProc", hwnd), this.Callbacks, this.OldProcs)
         }
-        s.mode := mode
-        DllCall("InvalidateRect", "Ptr", hwnd, "Ptr", 0, "Int", 1, "Void")
+        this.ButtonModes[hwnd] := mode
+        DllCall("InvalidateRect", "Ptr", hwnd, "Ptr", 0, "Int", 1)
     }
 
     /**
@@ -1559,11 +1391,31 @@ class _DarkButton extends Gui.Button {
      */
     static Remove(hwnd) {
         Subclass.Uninstall(hwnd, this.Callbacks, this.OldProcs)
-        if this.State.Has(hwnd) {
-            s := this.State[hwnd]
-            if s.iconOwned && s.icon
-                DllCall("DestroyIcon", "Ptr", s.icon, "Void")
-            this.State.Delete(hwnd)
+        if this.Icons.Has(hwnd) && this.IconOwned.Get(hwnd, false) && this.Icons[hwnd]
+            DllCall("DestroyIcon", "Ptr", this.Icons[hwnd])
+        for prop in [this.ButtonTexts, this.HoverStates, this.PressedStates, this.Instances, this.ButtonModes,
+                     this.Icons, this.IconOwned, this.IconAligns, this.Menus, this.OnDropdownCbs,
+                     this.Descriptions, this.ToggleStates, this.HoverArrow, this.FocusStates]
+            if prop.Has(hwnd)
+                prop.Delete(hwnd)
+    }
+
+    /**
+     * Updates a dark button's label and repaints it.
+     *
+     * The owner-draw paint reads from {@link _DarkButton.ButtonTexts}, so assigning
+     * the live control's `.Text` alone won't change the visible label — call this.
+     * No-op if the button isn't dark-styled.
+     *
+     * @param {Ptr} hwnd - Button window handle.
+     * @param {String} text - New button text.
+     */
+    static SetText(hwnd, text) {
+        if this.ButtonTexts.Has(hwnd) {
+            this.ButtonTexts[hwnd] := text
+            if this.Instances.Has(hwnd)
+                this.Instances[hwnd].Text := text
+            DllCall("InvalidateRect", "Ptr", hwnd, "Ptr", 0, "Int", 1)
         }
     }
 
@@ -1580,8 +1432,9 @@ class _DarkButton extends Gui.Button {
         btn := gui.Add("Button", options, text)
         owned := false
         hicon := this._ResolveIcon(icon, &owned, DarkTheme.Scale(16))
-        s := this._State(btn.Hwnd)
-        s.icon := hicon, s.iconOwned := owned, s.iconAlign := align
+        this.Icons[btn.Hwnd] := hicon
+        this.IconOwned[btn.Hwnd] := owned
+        this.IconAligns[btn.Hwnd] := align
         this._RegisterWithGui(gui, btn.Hwnd)
         this.ApplyDarkMode(btn, "icon")
         return btn
@@ -1597,13 +1450,13 @@ class _DarkButton extends Gui.Button {
      */
     static AddSplit(gui, options, text, menuOrCallback) {
         btn := gui.Add("Button", options, text)
-        s := this._State(btn.Hwnd)
         if menuOrCallback is Menu
-            s.menu := menuOrCallback
+            this.Menus[btn.Hwnd] := menuOrCallback
         else if HasMethod(menuOrCallback)
-            s.onDropdown := menuOrCallback
+            this.OnDropdownCbs[btn.Hwnd] := menuOrCallback
         else
             throw TypeError("AddSplit: menuOrCallback must be a Menu or callable", -1)
+        this.HoverArrow[btn.Hwnd] := false
         this._RegisterWithGui(gui, btn.Hwnd)
         this.ApplyDarkMode(btn, "split")
         return btn
@@ -1622,8 +1475,9 @@ class _DarkButton extends Gui.Button {
         btn := gui.Add("Button", options, title)
         owned := false
         hicon := this._ResolveIcon(icon, &owned, DarkTheme.Scale(20))
-        s := this._State(btn.Hwnd)
-        s.icon := hicon, s.iconOwned := owned, s.desc := description
+        this.Icons[btn.Hwnd] := hicon
+        this.IconOwned[btn.Hwnd] := owned
+        this.Descriptions[btn.Hwnd] := description
         this._RegisterWithGui(gui, btn.Hwnd)
         this.ApplyDarkMode(btn, "command")
         return btn
@@ -1639,11 +1493,11 @@ class _DarkButton extends Gui.Button {
      */
     static AddToggle(gui, options, text, initialState := false) {
         btn := gui.Add("Button", options, text)
-        this._State(btn.Hwnd).toggle := !!initialState
+        this.ToggleStates[btn.Hwnd] := !!initialState
         btn.DefineProp("IsToggled", {
-            Get: (b) => _DarkButton._State(b.Hwnd).toggle,
-            Set: (b, v) => (_DarkButton._State(b.Hwnd).toggle := !!v,
-                            DllCall("InvalidateRect", "Ptr", b.Hwnd, "Ptr", 0, "Int", 1, "Void"), 0)
+            Get: (b) => _DarkButton.ToggleStates.Get(b.Hwnd, false),
+            Set: (b, v) => (_DarkButton.ToggleStates[b.Hwnd] := !!v,
+                            DllCall("InvalidateRect", "Ptr", b.Hwnd, "Ptr", 0, "Int", 1), 0)
         })
         this._RegisterWithGui(gui, btn.Hwnd)
         this.ApplyDarkMode(btn, "toggle")
@@ -1686,7 +1540,7 @@ class _DarkButton extends Gui.Button {
         if InStr(s, ",") {
             parts := StrSplit(s, ",")
             iconPath := parts[1]
-            idx := Integer(parts.Get(2, 0))
+            idx := Integer(parts.Has(2) ? parts[2] : 0)
             return DllCall("shell32\ExtractIconW", "Ptr", 0, "Str", iconPath, "UInt", idx, "Ptr")
         }
         static IMAGE_ICON := 1, LR_LOADFROMFILE := 0x10
@@ -1706,7 +1560,6 @@ class _DarkButton extends Gui.Button {
 
     static ButtonProc(targetHwnd, hwnd, msg, wParam, lParam) {
         static WM_PAINT := 0x000F
-        static WM_ENABLE := 0x000A
         static WM_ERASEBKGND := 0x0014
         static WM_MOUSEMOVE := 0x0200
         static WM_MOUSELEAVE := 0x02A3
@@ -1721,66 +1574,57 @@ class _DarkButton extends Gui.Button {
             return 0
         }
 
-        ; Every remaining handler reads/writes this button's state.
-        s := this._State(targetHwnd)
-
-        ; Repaint when the enabled state flips so the dimmed look tracks .Enabled.
-        if msg = WM_ENABLE {
-            DllCall("InvalidateRect", "Ptr", targetHwnd, "Ptr", 0, "Int", 1, "Void")
-            return Subclass.CallOriginal(this.OldProcs[targetHwnd], hwnd, msg, wParam, lParam)
-        }
-
         if msg = WM_MOUSEMOVE {
             ; Sign-extend the LOWORD/HIWORD of lParam to handle negative coords during capture
             mx := lParam & 0xFFFF
             if mx & 0x8000
                 mx -= 0x10000
             inArrow := this._IsSplitButton(targetHwnd) && this._PointInArrow(targetHwnd, mx)
-            ; hoverArrow defaults false on non-split buttons, so this is a no-op there.
-            if s.hoverArrow != inArrow {
-                s.hoverArrow := inArrow
-                DllCall("InvalidateRect", "Ptr", targetHwnd, "Ptr", 0, "Int", 1, "Void")
+            if this.HoverArrow.Has(targetHwnd) && this.HoverArrow[targetHwnd] != inArrow {
+                this.HoverArrow[targetHwnd] := inArrow
+                DllCall("InvalidateRect", "Ptr", targetHwnd, "Ptr", 0, "Int", 1)
             }
-            if !s.hover {
-                s.hover := true
+            if !this.HoverStates[targetHwnd] {
+                this.HoverStates[targetHwnd] := true
                 static TME_LEAVE := 0x2
-                tme := DM_TRACKMOUSEEVENT()
-                tme.cbSize    := tme.Size
-                tme.dwFlags   := TME_LEAVE
-                tme.hwndTrack := targetHwnd
-                DllCall("TrackMouseEvent", "Ptr", tme.Ptr, "Void")
-                DllCall("InvalidateRect", "Ptr", targetHwnd, "Ptr", 0, "Int", 1, "Void")
+                tme := Buffer(24, 0)
+                NumPut("UInt", 24, tme, 0)
+                NumPut("UInt", TME_LEAVE, tme, 4)
+                NumPut("Ptr", targetHwnd, tme, 8)
+                DllCall("TrackMouseEvent", "Ptr", tme)
+                DllCall("InvalidateRect", "Ptr", targetHwnd, "Ptr", 0, "Int", 1)
             }
             return 0
         }
 
         if msg = WM_MOUSELEAVE {
-            s.hover := false
-            s.hoverArrow := false
-            DllCall("InvalidateRect", "Ptr", targetHwnd, "Ptr", 0, "Int", 1, "Void")
+            this.HoverStates[targetHwnd] := false
+            if this.HoverArrow.Has(targetHwnd)
+                this.HoverArrow[targetHwnd] := false
+            DllCall("InvalidateRect", "Ptr", targetHwnd, "Ptr", 0, "Int", 1)
             return 0
         }
 
         if msg = WM_LBUTTONDOWN {
-            s.pressed := true
-            DllCall("SetCapture", "Ptr", targetHwnd, "Void")
-            DllCall("InvalidateRect", "Ptr", targetHwnd, "Ptr", 0, "Int", 1, "Void")
+            this.PressedStates[targetHwnd] := true
+            DllCall("SetCapture", "Ptr", targetHwnd)
+            DllCall("InvalidateRect", "Ptr", targetHwnd, "Ptr", 0, "Int", 1)
             return 0
         }
 
         if msg = WM_LBUTTONUP {
-            wasPressed := s.pressed
-            s.pressed := false
-            DllCall("ReleaseCapture", "Void")
-            DllCall("InvalidateRect", "Ptr", targetHwnd, "Ptr", 0, "Int", 1, "Void")
+            wasPressed := this.PressedStates[targetHwnd]
+            this.PressedStates[targetHwnd] := false
+            DllCall("ReleaseCapture")
+            DllCall("InvalidateRect", "Ptr", targetHwnd, "Ptr", 0, "Int", 1)
             if wasPressed {
-                rc := DM_RECT()
+                rc := Buffer(16)
                 DllCall("GetClientRect", "Ptr", targetHwnd, "Ptr", rc)
-                pt := DM_POINT()
-                DllCall("GetCursorPos", "Ptr", pt.Ptr)
-                DllCall("ScreenToClient", "Ptr", targetHwnd, "Ptr", pt.Ptr, "Void")
-                x := pt.x, y := pt.y
-                w := rc.right, h := rc.bottom
+                pt := Buffer(8)
+                DllCall("GetCursorPos", "Ptr", pt)
+                DllCall("ScreenToClient", "Ptr", targetHwnd, "Ptr", pt)
+                x := NumGet(pt, 0, "Int"), y := NumGet(pt, 4, "Int")
+                w := NumGet(rc, 8, "Int"), h := NumGet(rc, 12, "Int")
                 if (x >= 0 && x < w && y >= 0 && y < h) {
                     if this._IsSplitButton(targetHwnd) && this._PointInArrow(targetHwnd, x)
                         this._ShowDropdown(targetHwnd)
@@ -1811,17 +1655,17 @@ class _DarkButton extends Gui.Button {
         }
 
         if msg = WM_SETFOCUS || msg = WM_KILLFOCUS {
-            s.focus := (msg = WM_SETFOCUS)
-            DllCall("InvalidateRect", "Ptr", targetHwnd, "Ptr", 0, "Int", 1, "Void")
+            this.FocusStates[targetHwnd] := (msg = WM_SETFOCUS)
+            DllCall("InvalidateRect", "Ptr", targetHwnd, "Ptr", 0, "Int", 1)
             return Subclass.CallOriginal(this.OldProcs[targetHwnd], hwnd, msg, wParam, lParam)
         }
 
         if msg = WM_KEYDOWN {
             ; Space presses in (visual only); fires on key-up like a real button.
             if wParam = VK_SPACE {
-                if !s.pressed {
-                    s.pressed := true
-                    DllCall("InvalidateRect", "Ptr", targetHwnd, "Ptr", 0, "Int", 1, "Void")
+                if !this.PressedStates[targetHwnd] {
+                    this.PressedStates[targetHwnd] := true
+                    DllCall("InvalidateRect", "Ptr", targetHwnd, "Ptr", 0, "Int", 1)
                 }
                 return 0
             }
@@ -1837,9 +1681,9 @@ class _DarkButton extends Gui.Button {
             return 0
         }
 
-        if msg = WM_KEYUP && wParam = VK_SPACE && s.pressed {
-            s.pressed := false
-            DllCall("InvalidateRect", "Ptr", targetHwnd, "Ptr", 0, "Int", 1, "Void")
+        if msg = WM_KEYUP && wParam = VK_SPACE && this.PressedStates[targetHwnd] {
+            this.PressedStates[targetHwnd] := false
+            DllCall("InvalidateRect", "Ptr", targetHwnd, "Ptr", 0, "Int", 1)
             this._FireClick(targetHwnd)
             return 0
         }
@@ -1857,9 +1701,8 @@ class _DarkButton extends Gui.Button {
     /** Flips toggle state when applicable, then notifies the parent with BN_CLICKED
      *  so the Gui's normal Click event fires. Shared by mouse, keyboard, and mnemonic. */
     static _FireClick(hwnd) {
-        s := this._State(hwnd)
-        if s.mode = "toggle"
-            s.toggle := !s.toggle
+        if this.ButtonModes.Get(hwnd, "") = "toggle"
+            this.ToggleStates[hwnd] := !this.ToggleStates.Get(hwnd, false)
         parent := DllCall("GetParent", "Ptr", hwnd, "Ptr")
         ctrlId := DllCall("GetDlgCtrlID", "Ptr", hwnd, "Int")
         static BN_CLICKED := 0, WM_COMMAND := 0x0111
@@ -1868,14 +1711,14 @@ class _DarkButton extends Gui.Button {
 
     /** True when this button is registered as a split (dropdown) button. */
     static _IsSplitButton(hwnd) {
-        return this.State.Has(hwnd) && this.State[hwnd].mode = "split"
+        return this.ButtonModes.Get(hwnd, "") = "split"
     }
 
     /** True when client-x falls inside the dropdown-arrow region. */
     static _PointInArrow(hwnd, clientX) {
-        rc := DM_RECT()
+        rc := Buffer(16)
         DllCall("GetClientRect", "Ptr", hwnd, "Ptr", rc)
-        w := rc.right
+        w := NumGet(rc, 8, "Int")
         arrowW := DarkTheme.Scale(20)
         return clientX >= w - arrowW && clientX < w
     }
@@ -1886,36 +1729,35 @@ class _DarkButton extends Gui.Button {
      * which silently mangles coordinates on high-DPI displays. The parent gui hwnd is the
      * owner so AHK's normal WM_COMMAND dispatch still fires the menu item callbacks. */
     static _ShowDropdown(hwnd) {
-        s := this._State(hwnd)
-        if s.onDropdown {
-            s.onDropdown(s.btn)
+        if this.OnDropdownCbs.Has(hwnd) {
+            cb := this.OnDropdownCbs[hwnd]
+            cb(this.Instances.Get(hwnd, ""))
             return
         }
-        if !s.menu || !s.btn
+        if !this.Menus.Has(hwnd) || !this.Instances.Has(hwnd)
             return
-        rc := DM_RECT()
+        rc := Buffer(16, 0)
         DllCall("GetWindowRect", "Ptr", hwnd, "Ptr", rc)
         DllCall("TrackPopupMenu",
-            "Ptr", s.menu.Handle,
+            "Ptr", this.Menus[hwnd].Handle,
             "UInt", 0,
-            "Int", rc.left,
-            "Int", rc.bottom,
+            "Int", NumGet(rc, 0, "Int"),
+            "Int", NumGet(rc, 12, "Int"),
             "Int", 0,
-            "Ptr", s.btn.Gui.Hwnd,
+            "Ptr", this.Instances[hwnd].Gui.Hwnd,
             "Ptr", 0)
     }
 
     static PaintButton(hwnd) {
-        ps := DM_PAINTSTRUCT()
-        hdc := DllCall("BeginPaint", "Ptr", hwnd, "Ptr", ps.Ptr, "Ptr")
+        ps := Buffer(72, 0)
+        hdc := DllCall("BeginPaint", "Ptr", hwnd, "Ptr", ps, "Ptr")
 
-        rc := DM_RECT()
+        rc := Buffer(16)
         DllCall("GetClientRect", "Ptr", hwnd, "Ptr", rc)
-        w := rc.right
-        h := rc.bottom
+        w := NumGet(rc, 8, "Int")
+        h := NumGet(rc, 12, "Int")
 
-        s := this._State(hwnd)
-        mode := s.mode
+        mode := this.ButtonModes.Get(hwnd, "default")
         switch mode {
             case "icon":    this._PaintIcon(hwnd, hdc, w, h)
             case "split":   this._PaintSplit(hwnd, hdc, w, h)
@@ -1926,43 +1768,38 @@ class _DarkButton extends Gui.Button {
         }
 
         ; Keyboard focus ring on top of whatever the mode drew.
-        if s.focus
+        if this.FocusStates.Get(hwnd, false)
             this._PaintFocusRing(hdc, w, h, mode = "accent" ? 0xFFFFFF : DarkTheme.Colors["Accent"])
 
-        DllCall("EndPaint", "Ptr", hwnd, "Ptr", ps.Ptr, "Void")
+        DllCall("EndPaint", "Ptr", hwnd, "Ptr", ps)
     }
 
     /** Draws a 1px rounded focus ring inset from the client edge (no fill). */
     static _PaintFocusRing(hdc, w, h, ringColor) {
-        pen := DarkTheme.GetPen(ringColor)
+        pen := DllCall("CreatePen", "Int", 0, "Int", 1, "UInt", DarkTheme.RGBtoBGR(ringColor), "Ptr")
         nullBrush := DllCall("GetStockObject", "Int", 5, "Ptr")
         oldPen := DllCall("SelectObject", "Ptr", hdc, "Ptr", pen, "Ptr")
         oldBrush := DllCall("SelectObject", "Ptr", hdc, "Ptr", nullBrush, "Ptr")
         r := this._Radius
-        DllCall("RoundRect", "Ptr", hdc, "Int", 1, "Int", 1, "Int", w - 1, "Int", h - 1, "Int", r, "Int", r, "Void")
-        DllCall("SelectObject", "Ptr", hdc, "Ptr", oldPen, "Void")
-        DllCall("SelectObject", "Ptr", hdc, "Ptr", oldBrush, "Void")
+        DllCall("RoundRect", "Ptr", hdc, "Int", 1, "Int", 1, "Int", w - 1, "Int", h - 1, "Int", r, "Int", r)
+        DllCall("SelectObject", "Ptr", hdc, "Ptr", oldPen)
+        DllCall("SelectObject", "Ptr", hdc, "Ptr", oldBrush)
+        DllCall("DeleteObject", "Ptr", pen)
     }
 
     /** Selects state-appropriate bg, text, and border colors for default/accent modes.
      * Win11-style: hover is a small lift, press is *darker* than rest (button "pushes in"). */
     static _StateColors(hwnd, mode) {
-        ; A disabled button ignores hover/press and dims bg + text.
-        if !DllCall("IsWindowEnabled", "Ptr", hwnd)
-            return [DarkTheme.Colors["DisabledBg"], DarkTheme.Colors["DisabledText"], DarkTheme.Colors["ButtonBorder"]]
-        s := this.State[hwnd]
-        isHover := s.hover
-        isPressed := s.pressed
+        isHover := this.HoverStates[hwnd]
+        isPressed := this.PressedStates[hwnd]
         if mode = "accent" {
-            bgColor := isPressed ? DarkTheme.Colors["AccentPressed"]
-                     : (isHover ? DarkTheme.Colors["AccentHover"] : DarkTheme.Colors["Accent"])
+            bgColor := isPressed ? 0x005A9E : (isHover ? 0x1A8CFF : DarkTheme.Colors["Accent"])
             textColor := 0xFFFFFF
-            borderColor := DarkTheme.Colors["AccentBorder"]
+            borderColor := 0x0064B0
         } else {
-            bgColor := isPressed ? DarkTheme.Colors["ButtonPressed"]
-                     : (isHover ? DarkTheme.Colors["ButtonHover"] : DarkTheme.Colors["Controls"])
+            bgColor := isPressed ? 0x1F1F1F : (isHover ? 0x303030 : DarkTheme.Colors["Controls"])
             textColor := DarkTheme.Colors["Font"]
-            borderColor := DarkTheme.Colors["ButtonBorder"]
+            borderColor := 0x3A3A3A
         }
         return [bgColor, textColor, borderColor]
     }
@@ -1970,22 +1807,25 @@ class _DarkButton extends Gui.Button {
     /** Win11-feel button corner radius in DPI-scaled pixels. */
     static _Radius => DarkTheme.Scale(5)
 
-    /** Fills the entire client rect with the parent (window) color.
-     * Uses the cached Background brush — never delete it. */
+    /** Fills the entire client rect with the parent (window) color. */
     static _FillParent(hdc, rc) {
-        DllCall("FillRect", "Ptr", hdc, "Ptr", rc, "Ptr", DarkTheme.GetBrush("Background"), "Void")
+        b := DllCall("CreateSolidBrush", "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Background"]), "Ptr")
+        DllCall("FillRect", "Ptr", hdc, "Ptr", rc, "Ptr", b)
+        DllCall("DeleteObject", "Ptr", b)
     }
 
     /** Paints a rounded-rectangle fill with optional border color. */
     static _RoundFill(hdc, x1, y1, x2, y2, radius, bgColor, borderColor := -1) {
+        bg := DllCall("CreateSolidBrush", "UInt", DarkTheme.RGBtoBGR(bgColor), "Ptr")
         bcol := borderColor = -1 ? bgColor : borderColor
-        bg := DarkTheme.GetSolidBrush(bgColor)
-        pen := DarkTheme.GetPen(bcol)
+        pen := DllCall("CreatePen", "Int", 0, "Int", 1, "UInt", DarkTheme.RGBtoBGR(bcol), "Ptr")
         oldBrush := DllCall("SelectObject", "Ptr", hdc, "Ptr", bg, "Ptr")
         oldPen := DllCall("SelectObject", "Ptr", hdc, "Ptr", pen, "Ptr")
-        DllCall("RoundRect", "Ptr", hdc, "Int", x1, "Int", y1, "Int", x2, "Int", y2, "Int", radius, "Int", radius, "Void")
-        DllCall("SelectObject", "Ptr", hdc, "Ptr", oldBrush, "Void")
-        DllCall("SelectObject", "Ptr", hdc, "Ptr", oldPen, "Void")
+        DllCall("RoundRect", "Ptr", hdc, "Int", x1, "Int", y1, "Int", x2, "Int", y2, "Int", radius, "Int", radius)
+        DllCall("SelectObject", "Ptr", hdc, "Ptr", oldBrush)
+        DllCall("SelectObject", "Ptr", hdc, "Ptr", oldPen)
+        DllCall("DeleteObject", "Ptr", bg)
+        DllCall("DeleteObject", "Ptr", pen)
     }
 
     /** Selects the button's font into the dc and returns the previous font handle (0 if none). */
@@ -1994,11 +1834,11 @@ class _DarkButton extends Gui.Button {
         return hFont ? DllCall("SelectObject", "Ptr", hdc, "Ptr", hFont, "Ptr") : 0
     }
 
-    /** Draws text using DrawText with a flag set; rect is a Buffer of DM_RECT. */
+    /** Draws text using DrawText with a flag set; rect is a Buffer of RECT. */
     static _DrawText(hdc, text, rect, color, flags) {
-        DllCall("SetBkMode", "Ptr", hdc, "Int", 1, "Void")
-        DllCall("SetTextColor", "Ptr", hdc, "UInt", DarkTheme.RGBtoBGR(color), "Void")
-        DllCall("DrawTextW", "Ptr", hdc, "Str", text, "Int", -1, "Ptr", rect, "UInt", flags, "Void")
+        DllCall("SetBkMode", "Ptr", hdc, "Int", 1)
+        DllCall("SetTextColor", "Ptr", hdc, "UInt", DarkTheme.RGBtoBGR(color))
+        DllCall("DrawText", "Ptr", hdc, "Str", text, "Int", -1, "Ptr", rect, "UInt", flags)
     }
 
     /** Draws an HICON via DrawIconEx at (x,y) sized sizePx. */
@@ -2007,28 +1847,31 @@ class _DarkButton extends Gui.Button {
             return
         static DI_NORMAL := 0x3
         DllCall("DrawIconEx", "Ptr", hdc, "Int", x, "Int", y, "Ptr", hicon,
-                "Int", sizePx, "Int", sizePx, "UInt", 0, "Ptr", 0, "UInt", DI_NORMAL, "Void")
+                "Int", sizePx, "Int", sizePx, "UInt", 0, "Ptr", 0, "UInt", DI_NORMAL)
     }
 
-    /** Constructs a DM_RECT for use with DrawText. */
+    /** Constructs a RECT buffer for use with DrawText. */
     static _MakeRect(left, top, right, bottom) {
-        rc := DM_RECT()
-        rc.left := left, rc.top := top, rc.right := right, rc.bottom := bottom
+        rc := Buffer(16)
+        NumPut("Int", left, rc, 0)
+        NumPut("Int", top, rc, 4)
+        NumPut("Int", right, rc, 8)
+        NumPut("Int", bottom, rc, 12)
         return rc
     }
 
     /** Default + accent path: rounded fill with thin border, centered text. */
     static _PaintBasic(hwnd, hdc, w, h) {
         rc := this._MakeRect(0, 0, w, h)
-        s := this.State[hwnd]
-        colors := this._StateColors(hwnd, s.mode)
+        mode := this.ButtonModes.Get(hwnd, "default")
+        colors := this._StateColors(hwnd, mode)
         this._FillParent(hdc, rc)
         this._RoundFill(hdc, 0, 0, w, h, this._Radius, colors[1], colors[3])
         oldFont := this._SelectButtonFont(hwnd, hdc)
         static DT_CENTER := 0x1, DT_VCENTER := 0x4, DT_SINGLELINE := 0x20
-        this._DrawText(hdc, s.text, rc, colors[2], DT_CENTER | DT_VCENTER | DT_SINGLELINE)
+        this._DrawText(hdc, this.ButtonTexts[hwnd], rc, colors[2], DT_CENTER | DT_VCENTER | DT_SINGLELINE)
         if oldFont
-            DllCall("SelectObject", "Ptr", hdc, "Ptr", oldFont, "Void")
+            DllCall("SelectObject", "Ptr", hdc, "Ptr", oldFont)
     }
 
     /** Icon + optional text. align="left"|"right"|"top"|"center". */
@@ -2038,10 +1881,9 @@ class _DarkButton extends Gui.Button {
         this._FillParent(hdc, rc)
         this._RoundFill(hdc, 0, 0, w, h, this._Radius, colors[1], colors[3])
 
-        s := this.State[hwnd]
-        btnText := s.text
-        hicon := s.icon
-        align := s.iconAlign
+        btnText := this.ButtonTexts[hwnd]
+        hicon := this.Icons.Get(hwnd, 0)
+        align := this.IconAligns.Get(hwnd, "left")
         iconSize := DarkTheme.Scale(16)
         pad := DarkTheme.Scale(8)
 
@@ -2089,7 +1931,7 @@ class _DarkButton extends Gui.Button {
         }
 
         if oldFont
-            DllCall("SelectObject", "Ptr", hdc, "Ptr", oldFont, "Void")
+            DllCall("SelectObject", "Ptr", hdc, "Ptr", oldFont)
     }
 
     /** Split button: main text region + dropdown-arrow region with divider. */
@@ -2099,18 +1941,17 @@ class _DarkButton extends Gui.Button {
         this._FillParent(hdc, rc)
 
         arrowW := DarkTheme.Scale(20)
-        s := this.State[hwnd]
-        hoverArrow := s.hoverArrow
-        isHover := s.hover
-        isPressed := s.pressed
+        hoverArrow := this.HoverArrow.Get(hwnd, false)
+        isHover := this.HoverStates[hwnd]
+        isPressed := this.PressedStates[hwnd]
 
         ; Win11-feel: hover lifts subtly, press goes darker than rest
         mainHover := isHover && !hoverArrow
-        mainBg := isPressed && !hoverArrow ? DarkTheme.Colors["ButtonPressed"]
-                : (mainHover ? DarkTheme.Colors["ButtonHover"] : DarkTheme.Colors["Controls"])
+        mainBg := isPressed && !hoverArrow ? 0x1F1F1F
+                : (mainHover ? 0x303030 : DarkTheme.Colors["Controls"])
         arrowHover := isHover && hoverArrow
-        arrowBg := isPressed && hoverArrow ? DarkTheme.Colors["ButtonPressed"]
-                 : (arrowHover ? DarkTheme.Colors["ButtonHover"] : DarkTheme.Colors["Controls"])
+        arrowBg := isPressed && hoverArrow ? 0x1F1F1F
+                 : (arrowHover ? 0x303030 : DarkTheme.Colors["Controls"])
 
         ; Single rounded backdrop with thin border, then overlay arrow region
         radius := this._Radius
@@ -2121,26 +1962,30 @@ class _DarkButton extends Gui.Button {
             saved := DllCall("SaveDC", "Ptr", hdc, "Int")
             rgn := DllCall("CreateRoundRectRgn", "Int", 1, "Int", 1, "Int", w, "Int", h,
                            "Int", radius - 1, "Int", radius - 1, "Ptr")
-            DllCall("SelectClipRgn", "Ptr", hdc, "Ptr", rgn, "Void")
-            DllCall("FillRect", "Ptr", hdc, "Ptr", arrowRc, "Ptr", DarkTheme.GetSolidBrush(arrowBg), "Void")
-            DllCall("RestoreDC", "Ptr", hdc, "Int", saved, "Void")
-            DllCall("DeleteObject", "Ptr", rgn, "Void")
+            DllCall("SelectClipRgn", "Ptr", hdc, "Ptr", rgn)
+            ab := DllCall("CreateSolidBrush", "UInt", DarkTheme.RGBtoBGR(arrowBg), "Ptr")
+            DllCall("FillRect", "Ptr", hdc, "Ptr", arrowRc, "Ptr", ab)
+            DllCall("DeleteObject", "Ptr", ab)
+            DllCall("RestoreDC", "Ptr", hdc, "Int", saved)
+            DllCall("DeleteObject", "Ptr", rgn)
         }
 
         ; Vertical divider line between regions
-        oldPen := DllCall("SelectObject", "Ptr", hdc, "Ptr", DarkTheme.GetPen(DarkTheme.Colors["Border"]), "Ptr")
+        divPen := DllCall("CreatePen", "Int", 0, "Int", 1, "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Border"]), "Ptr")
+        oldPen := DllCall("SelectObject", "Ptr", hdc, "Ptr", divPen, "Ptr")
         divX := w - arrowW
-        DllCall("MoveToEx", "Ptr", hdc, "Int", divX, "Int", DarkTheme.Scale(4), "Ptr", 0, "Void")
-        DllCall("LineTo", "Ptr", hdc, "Int", divX, "Int", h - DarkTheme.Scale(4), "Void")
-        DllCall("SelectObject", "Ptr", hdc, "Ptr", oldPen, "Void")
+        DllCall("MoveToEx", "Ptr", hdc, "Int", divX, "Int", DarkTheme.Scale(4), "Ptr", 0)
+        DllCall("LineTo", "Ptr", hdc, "Int", divX, "Int", h - DarkTheme.Scale(4))
+        DllCall("SelectObject", "Ptr", hdc, "Ptr", oldPen)
+        DllCall("DeleteObject", "Ptr", divPen)
 
         ; Main text (left region)
         oldFont := this._SelectButtonFont(hwnd, hdc)
         textRc := this._MakeRect(0, 0, w - arrowW, h)
         static DT_CENTER := 0x1, DT_VCENTER := 0x4, DT_SINGLELINE := 0x20
-        this._DrawText(hdc, s.text, textRc, baseColors[2], DT_CENTER | DT_VCENTER | DT_SINGLELINE)
+        this._DrawText(hdc, this.ButtonTexts[hwnd], textRc, baseColors[2], DT_CENTER | DT_VCENTER | DT_SINGLELINE)
         if oldFont
-            DllCall("SelectObject", "Ptr", hdc, "Ptr", oldFont, "Void")
+            DllCall("SelectObject", "Ptr", hdc, "Ptr", oldFont)
 
         ; Down-arrow triangle in arrow region
         this._PaintDownArrow(hdc, w - arrowW + arrowW // 2, h // 2, DarkTheme.Scale(4), baseColors[2])
@@ -2148,32 +1993,36 @@ class _DarkButton extends Gui.Button {
 
     /** Filled triangle pointing down, centered at (cx, cy), with half-width radius. */
     static _PaintDownArrow(hdc, cx, cy, radius, color) {
-        tri := DM_TRIANGLE()
-        tri.p[1].x := cx - radius, tri.p[1].y := cy - radius // 2
-        tri.p[2].x := cx + radius, tri.p[2].y := cy - radius // 2
-        tri.p[3].x := cx,          tri.p[3].y := cy + radius
-        brush := DarkTheme.GetSolidBrush(color)
-        pen := DarkTheme.GetPen(color)
+        pts := Buffer(24)
+        NumPut("Int", cx - radius, pts, 0),  NumPut("Int", cy - radius // 2, pts, 4)
+        NumPut("Int", cx + radius, pts, 8),  NumPut("Int", cy - radius // 2, pts, 12)
+        NumPut("Int", cx,          pts, 16), NumPut("Int", cy + radius,      pts, 20)
+        brush := DllCall("CreateSolidBrush", "UInt", DarkTheme.RGBtoBGR(color), "Ptr")
+        pen := DllCall("CreatePen", "Int", 0, "Int", 1, "UInt", DarkTheme.RGBtoBGR(color), "Ptr")
         oldB := DllCall("SelectObject", "Ptr", hdc, "Ptr", brush, "Ptr")
         oldP := DllCall("SelectObject", "Ptr", hdc, "Ptr", pen, "Ptr")
-        DllCall("Polygon", "Ptr", hdc, "Ptr", tri.Ptr, "Int", 3, "Void")
-        DllCall("SelectObject", "Ptr", hdc, "Ptr", oldB, "Void")
-        DllCall("SelectObject", "Ptr", hdc, "Ptr", oldP, "Void")
+        DllCall("Polygon", "Ptr", hdc, "Ptr", pts, "Int", 3)
+        DllCall("SelectObject", "Ptr", hdc, "Ptr", oldB)
+        DllCall("SelectObject", "Ptr", hdc, "Ptr", oldP)
+        DllCall("DeleteObject", "Ptr", brush)
+        DllCall("DeleteObject", "Ptr", pen)
     }
 
     /** Right-pointing chevron used as the default command-link icon. */
     static _PaintRightArrow(hdc, cx, cy, radius, color) {
-        tri := DM_TRIANGLE()
-        tri.p[1].x := cx - radius // 2, tri.p[1].y := cy - radius
-        tri.p[2].x := cx - radius // 2, tri.p[2].y := cy + radius
-        tri.p[3].x := cx + radius,      tri.p[3].y := cy
-        brush := DarkTheme.GetSolidBrush(color)
-        pen := DarkTheme.GetPen(color)
+        pts := Buffer(24)
+        NumPut("Int", cx - radius // 2, pts, 0),  NumPut("Int", cy - radius, pts, 4)
+        NumPut("Int", cx - radius // 2, pts, 8),  NumPut("Int", cy + radius, pts, 12)
+        NumPut("Int", cx + radius,      pts, 16), NumPut("Int", cy,          pts, 20)
+        brush := DllCall("CreateSolidBrush", "UInt", DarkTheme.RGBtoBGR(color), "Ptr")
+        pen := DllCall("CreatePen", "Int", 0, "Int", 1, "UInt", DarkTheme.RGBtoBGR(color), "Ptr")
         oldB := DllCall("SelectObject", "Ptr", hdc, "Ptr", brush, "Ptr")
         oldP := DllCall("SelectObject", "Ptr", hdc, "Ptr", pen, "Ptr")
-        DllCall("Polygon", "Ptr", hdc, "Ptr", tri.Ptr, "Int", 3, "Void")
-        DllCall("SelectObject", "Ptr", hdc, "Ptr", oldB, "Void")
-        DllCall("SelectObject", "Ptr", hdc, "Ptr", oldP, "Void")
+        DllCall("Polygon", "Ptr", hdc, "Ptr", pts, "Int", 3)
+        DllCall("SelectObject", "Ptr", hdc, "Ptr", oldB)
+        DllCall("SelectObject", "Ptr", hdc, "Ptr", oldP)
+        DllCall("DeleteObject", "Ptr", brush)
+        DllCall("DeleteObject", "Ptr", pen)
     }
 
     /** Vista-style command link: title + description + optional left icon (default chevron). */
@@ -2185,8 +2034,7 @@ class _DarkButton extends Gui.Button {
 
         pad := DarkTheme.Scale(12)
         iconSize := DarkTheme.Scale(20)
-        s := this.State[hwnd]
-        hicon := s.icon
+        hicon := this.Icons.Get(hwnd, 0)
 
         iconAreaX := pad
         iconAreaY := pad
@@ -2200,8 +2048,8 @@ class _DarkButton extends Gui.Button {
         textLeft := iconAreaX + iconSize + pad
         oldFont := this._SelectButtonFont(hwnd, hdc)
 
-        cmdTitle := s.text
-        desc := s.desc
+        cmdTitle := this.ButtonTexts[hwnd]
+        desc := this.Descriptions.Get(hwnd, "")
 
         static DT_LEFT := 0x0, DT_TOP := 0x0, DT_SINGLELINE := 0x20, DT_WORDBREAK := 0x10, DT_END_ELLIPSIS := 0x8000
         titleRc := this._MakeRect(textLeft, pad, w - pad, pad + DarkTheme.Scale(22))
@@ -2211,44 +2059,41 @@ class _DarkButton extends Gui.Button {
         this._DrawText(hdc, desc, descRc, DarkTheme.Colors["FontDim"], DT_LEFT | DT_TOP | DT_WORDBREAK)
 
         if oldFont
-            DllCall("SelectObject", "Ptr", hdc, "Ptr", oldFont, "Void")
+            DllCall("SelectObject", "Ptr", hdc, "Ptr", oldFont)
     }
 
     /** Sticky toggle button — on-state mimics an Accent button so the active state really pops.
      * Off-state matches the default-mode button so toggles look at home next to regular buttons. */
     static _PaintToggle(hwnd, hdc, w, h) {
         rc := this._MakeRect(0, 0, w, h)
-        s := this.State[hwnd]
-        colors := this._StateColors(hwnd, s.toggle ? "accent" : "default")
+        isToggled := this.ToggleStates.Get(hwnd, false)
+        colors := this._StateColors(hwnd, isToggled ? "accent" : "default")
         this._FillParent(hdc, rc)
         this._RoundFill(hdc, 0, 0, w, h, this._Radius, colors[1], colors[3])
         oldFont := this._SelectButtonFont(hwnd, hdc)
         static DT_CENTER := 0x1, DT_VCENTER := 0x4, DT_SINGLELINE := 0x20
-        this._DrawText(hdc, s.text, rc, colors[2], DT_CENTER | DT_VCENTER | DT_SINGLELINE)
+        this._DrawText(hdc, this.ButtonTexts[hwnd], rc, colors[2], DT_CENTER | DT_VCENTER | DT_SINGLELINE)
         if oldFont
-            DllCall("SelectObject", "Ptr", hdc, "Ptr", oldFont, "Void")
+            DllCall("SelectObject", "Ptr", hdc, "Ptr", oldFont)
     }
 
     /** Borderless flat button — no fill at idle, hover/press only. */
     static _PaintFlat(hwnd, hdc, w, h) {
         rc := this._MakeRect(0, 0, w, h)
-        s := this.State[hwnd]
-        isEnabled := DllCall("IsWindowEnabled", "Ptr", hwnd)
-        isHover := isEnabled && s.hover
-        isPressed := isEnabled && s.pressed
+        isHover := this.HoverStates[hwnd]
+        isPressed := this.PressedStates[hwnd]
 
         this._FillParent(hdc, rc)
         if isPressed
-            this._RoundFill(hdc, 0, 0, w, h, this._Radius, DarkTheme.Colors["FlatPressed"])
+            this._RoundFill(hdc, 0, 0, w, h, this._Radius, 0x282828)
         else if isHover
-            this._RoundFill(hdc, 0, 0, w, h, this._Radius, DarkTheme.Colors["ButtonHover"])
+            this._RoundFill(hdc, 0, 0, w, h, this._Radius, 0x303030)
 
         oldFont := this._SelectButtonFont(hwnd, hdc)
         static DT_CENTER := 0x1, DT_VCENTER := 0x4, DT_SINGLELINE := 0x20
-        textColor := isEnabled ? DarkTheme.Colors["Font"] : DarkTheme.Colors["DisabledText"]
-        this._DrawText(hdc, s.text, rc, textColor, DT_CENTER | DT_VCENTER | DT_SINGLELINE)
+        this._DrawText(hdc, this.ButtonTexts[hwnd], rc, DarkTheme.Colors["Font"], DT_CENTER | DT_VCENTER | DT_SINGLELINE)
         if oldFont
-            DllCall("SelectObject", "Ptr", hdc, "Ptr", oldFont, "Void")
+            DllCall("SelectObject", "Ptr", hdc, "Ptr", oldFont)
     }
 }
 
@@ -2279,10 +2124,10 @@ class _DarkComboBox extends Gui.ComboBox {
 
         ; Get and style the dropdown list (ListBox part of ComboBox)
         static CB_GETCOMBOBOXINFO := 0x0164
-        cbi := DM_COMBOBOXINFO()
-        cbi.cbSize := cbi.Size
-        if DllCall("SendMessage", "Ptr", combo.Hwnd, "UInt", CB_GETCOMBOBOXINFO, "Ptr", 0, "Ptr", cbi.Ptr) {
-            listHwnd := cbi.hwndList
+        cbi := Buffer(A_PtrSize = 8 ? 64 : 52, 0)
+        NumPut("UInt", cbi.Size, cbi, 0)
+        if DllCall("SendMessage", "Ptr", combo.Hwnd, "UInt", CB_GETCOMBOBOXINFO, "Ptr", 0, "Ptr", cbi) {
+            listHwnd := NumGet(cbi, A_PtrSize = 8 ? 56 : 44, "Ptr")
             if listHwnd {
                 ; Apply dark theme to dropdown list for modern scrollbar
                 DllCall("uxtheme\SetWindowTheme", "Ptr", listHwnd, "Str", "DarkMode_Explorer", "Ptr", 0)
@@ -2323,51 +2168,49 @@ class _DarkComboBox extends Gui.ComboBox {
     }
 
     static DrawComboBox(hwnd) {
-        ps := DM_PAINTSTRUCT()
-        hdc := DllCall("BeginPaint", "Ptr", hwnd, "Ptr", ps.Ptr, "Ptr")
-        if !hdc {
-            ; Must still pair BeginPaint with EndPaint or the update region is
-            ; never validated and WM_PAINT fires in a tight loop.
-            DllCall("EndPaint", "Ptr", hwnd, "Ptr", ps.Ptr, "Void")
+        ; Use BeginPaint/EndPaint for proper WM_PAINT handling
+        ps := Buffer(72, 0)  ; PAINTSTRUCT
+        hdc := DllCall("BeginPaint", "Ptr", hwnd, "Ptr", ps, "Ptr")
+        if !hdc
             return
-        }
 
-        rc := DM_RECT()
+        rc := Buffer(16)
         DllCall("GetClientRect", "Ptr", hwnd, "Ptr", rc)
-        w := rc.right
-        h := rc.bottom
+        w := NumGet(rc, 8, "Int")
+        h := NumGet(rc, 12, "Int")
 
+        bgColor := DarkTheme.RGBtoBGR(DarkTheme.Colors["Background"])
+        ctrlColor := DarkTheme.RGBtoBGR(DarkTheme.Colors["Controls"])
         fontColor := DarkTheme.RGBtoBGR(DarkTheme.Colors["Font"])
 
-        ; Cached palette brushes — do not delete them
-        bgBrush := DarkTheme.GetBrush("Background")
-        ctrlBrush := DarkTheme.GetBrush("Controls")
+        bgBrush := DllCall("CreateSolidBrush", "UInt", bgColor, "Ptr")
+        ctrlBrush := DllCall("CreateSolidBrush", "UInt", ctrlColor, "Ptr")
 
         ; Step 1: Fill entire control with parent bg color (covers all exterior artifacts)
-        fillRect := DM_RECT()
-        fillRect.left := 0, fillRect.top := 0, fillRect.right := w, fillRect.bottom := h
-        DllCall("FillRect", "Ptr", hdc, "Ptr", fillRect, "Ptr", bgBrush, "Void")
+        fillRect := Buffer(16)
+        NumPut("Int", 0, "Int", 0, "Int", w, "Int", h, fillRect)
+        DllCall("FillRect", "Ptr", hdc, "Ptr", fillRect, "Ptr", bgBrush)
 
         ; Step 2: Fill interior with control color (rounded rect, no border)
         hOldBrush := DllCall("SelectObject", "Ptr", hdc, "Ptr", ctrlBrush, "Ptr")
         nullPen := DllCall("GetStockObject", "Int", 8, "Ptr")  ; NULL_PEN
         hOldPen := DllCall("SelectObject", "Ptr", hdc, "Ptr", nullPen, "Ptr")
         comboRadius := DarkTheme.Scale(6)
-        DllCall("RoundRect", "Ptr", hdc, "Int", 0, "Int", 0, "Int", w, "Int", h, "Int", comboRadius, "Int", comboRadius, "Void")
+        DllCall("RoundRect", "Ptr", hdc, "Int", 0, "Int", 0, "Int", w, "Int", h, "Int", comboRadius, "Int", comboRadius)
 
-        ; Step 3: Draw dropdown arrow (cached 2px pen — do not delete)
-        arrowPen := DarkTheme.GetPen(DarkTheme.Colors["Font"], 2)
-        DllCall("SelectObject", "Ptr", hdc, "Ptr", arrowPen, "Void")
+        ; Step 3: Draw dropdown arrow
+        arrowPen := DllCall("CreatePen", "Int", 0, "Int", 2, "UInt", fontColor, "Ptr")
+        DllCall("SelectObject", "Ptr", hdc, "Ptr", arrowPen, "Ptr")
 
         arrowCenterX := w - DarkTheme.Scale(12)
         arrowCenterY := h // 2
         arrowHalfWidth := DarkTheme.Scale(4)
         arrowHeight := DarkTheme.Scale(3)
 
-        DllCall("MoveToEx", "Ptr", hdc, "Int", arrowCenterX - arrowHalfWidth, "Int", arrowCenterY - arrowHeight, "Ptr", 0, "Void")
-        DllCall("LineTo", "Ptr", hdc, "Int", arrowCenterX, "Int", arrowCenterY + 1, "Void")
-        DllCall("MoveToEx", "Ptr", hdc, "Int", arrowCenterX, "Int", arrowCenterY + 1, "Ptr", 0, "Void")
-        DllCall("LineTo", "Ptr", hdc, "Int", arrowCenterX + arrowHalfWidth, "Int", arrowCenterY - arrowHeight, "Void")
+        DllCall("MoveToEx", "Ptr", hdc, "Int", arrowCenterX - arrowHalfWidth, "Int", arrowCenterY - arrowHeight, "Ptr", 0)
+        DllCall("LineTo", "Ptr", hdc, "Int", arrowCenterX, "Int", arrowCenterY + 1)
+        DllCall("MoveToEx", "Ptr", hdc, "Int", arrowCenterX, "Int", arrowCenterY + 1, "Ptr", 0)
+        DllCall("LineTo", "Ptr", hdc, "Int", arrowCenterX + arrowHalfWidth, "Int", arrowCenterY - arrowHeight)
 
         ; Step 5: Draw text
         static WM_GETTEXT := 0x000D
@@ -2378,27 +2221,30 @@ class _DarkComboBox extends Gui.ComboBox {
             textBuf := Buffer((textLen + 1) * 2, 0)
             DllCall("SendMessage", "Ptr", hwnd, "UInt", WM_GETTEXT, "Ptr", textLen + 1, "Ptr", textBuf)
 
-            DllCall("SetTextColor", "Ptr", hdc, "UInt", fontColor, "Void")
-            DllCall("SetBkMode", "Ptr", hdc, "Int", 1, "Void")  ; TRANSPARENT
+            DllCall("SetTextColor", "Ptr", hdc, "UInt", fontColor)
+            DllCall("SetBkMode", "Ptr", hdc, "Int", 1)  ; TRANSPARENT
 
             hFont := DllCall("SendMessage", "Ptr", hwnd, "UInt", WM_GETFONT, "Ptr", 0, "Ptr", 0, "Ptr")
             hOldFont := 0
             if hFont
                 hOldFont := DllCall("SelectObject", "Ptr", hdc, "Ptr", hFont, "Ptr")
 
-            rcText := DM_RECT()
-            rcText.left := DarkTheme.Scale(6), rcText.top := 0, rcText.right := w - DarkTheme.Scale(24), rcText.bottom := h
+            rcText := Buffer(16)
+            NumPut("Int", DarkTheme.Scale(6), "Int", 0, "Int", w - DarkTheme.Scale(24), "Int", h, rcText)
             static DT_SINGLELINE := 0x20, DT_VCENTER := 0x4, DT_NOPREFIX := 0x800
-            DllCall("DrawTextW", "Ptr", hdc, "Ptr", textBuf, "Int", -1, "Ptr", rcText, "UInt", DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX, "Void")
+            DllCall("DrawTextW", "Ptr", hdc, "Ptr", textBuf, "Int", -1, "Ptr", rcText, "UInt", DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX)
 
             if hOldFont
-                DllCall("SelectObject", "Ptr", hdc, "Ptr", hOldFont, "Void")
+                DllCall("SelectObject", "Ptr", hdc, "Ptr", hOldFont, "Ptr")
         }
 
-        ; Cleanup (bgBrush/ctrlBrush/arrowPen are cached — restore, don't delete)
-        DllCall("SelectObject", "Ptr", hdc, "Ptr", hOldPen, "Void")
-        DllCall("SelectObject", "Ptr", hdc, "Ptr", hOldBrush, "Void")
-        DllCall("EndPaint", "Ptr", hwnd, "Ptr", ps.Ptr, "Void")
+        ; Cleanup
+        DllCall("SelectObject", "Ptr", hdc, "Ptr", hOldPen)
+        DllCall("SelectObject", "Ptr", hdc, "Ptr", hOldBrush)
+        DllCall("DeleteObject", "Ptr", bgBrush)
+        DllCall("DeleteObject", "Ptr", ctrlBrush)
+        DllCall("DeleteObject", "Ptr", arrowPen)
+        DllCall("EndPaint", "Ptr", hwnd, "Ptr", ps)
     }
 }
 
@@ -2419,10 +2265,10 @@ class _DarkSlider extends Gui.Slider {
     static __New() {
         super.Prototype.SetDarkMode := ObjBindMethod(this, "ApplyDarkMode")
         ; Initialize GDI+ once for anti-aliased thumb drawing
-        si := DM_GpInput()
-        si.GdiplusVersion := 1
+        si := Buffer(24, 0)
+        NumPut("UInt", 1, si, 0)
         token := 0
-        DllCall("gdiplus\GdiplusStartup", "Ptr*", &token, "Ptr", si.Ptr, "Ptr", 0)
+        DllCall("gdiplus\GdiplusStartup", "Ptr*", &token, "Ptr", si, "Ptr", 0)
         this.GdipToken := token
     }
 
@@ -2440,7 +2286,7 @@ class _DarkSlider extends Gui.Slider {
         ; Subclass for custom drawing
         this.SubclassSlider(slider.Hwnd)
 
-        DllCall("InvalidateRect", "Ptr", slider.Hwnd, "Ptr", 0, "Int", true, "Void")
+        DllCall("InvalidateRect", "Ptr", slider.Hwnd, "Ptr", 0, "Int", true)
     }
 
     static SubclassSlider(hwnd) {
@@ -2457,16 +2303,15 @@ class _DarkSlider extends Gui.Slider {
     }
 
     /**
-     * Releases our GDI+ token reference. Intentionally does NOT call
-     * GdiplusShutdown: AHK shares gdiplus.dll for its own image handling and
-     * keeps GDI+ initialized for the process lifetime. Calling GdiplusShutdown
-     * here faults during process teardown (abnormal exit code) and — because
-     * this also runs from {@link DarkTheme.Release} when the last DarkGui is
-     * destroyed — would tear GDI+ out from under AHK mid-run. The OS reclaims
-     * GDI+ on exit, so dropping the token is all that's needed.
+     * Shuts down GDI+ (call on application exit).
      */
     static Shutdown() {
-        this.GdipToken := 0
+        if this.GdipToken {
+            ; AHK shares gdiplus.dll for image loading; by __Delete time
+            ; the token can already be invalid. OS reclaims GDI+ on exit.
+            try DllCall("gdiplus\GdiplusShutdown", "Ptr", this.GdipToken)
+            this.GdipToken := 0
+        }
     }
 
     static SliderProc(targetHwnd, hwnd, msg, wParam, lParam) {
@@ -2488,50 +2333,56 @@ class _DarkSlider extends Gui.Slider {
         if msg = WM_LBUTTONDOWN || msg = WM_MOUSEMOVE || msg = WM_LBUTTONUP {
             result := Subclass.CallOriginal(this.OldProcs[targetHwnd], hwnd, msg, wParam, lParam)
             ; Invalidate entire control to repaint cleanly
-            DllCall("InvalidateRect", "Ptr", hwnd, "Ptr", 0, "Int", true, "Void")
+            DllCall("InvalidateRect", "Ptr", hwnd, "Ptr", 0, "Int", true)
             return result
         }
 
         if msg = WM_ERASEBKGND {
-            ; Fill background with the cached Background brush (do not delete it)
-            rc := DM_RECT()
+            ; Fill background
+            rc := Buffer(16)
             DllCall("GetClientRect", "Ptr", hwnd, "Ptr", rc)
-            DllCall("FillRect", "Ptr", wParam, "Ptr", rc, "Ptr", DarkTheme.GetBrush("Background"), "Void")
+            hBrush := DllCall("CreateSolidBrush", "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Background"]), "Ptr")
+            DllCall("FillRect", "Ptr", wParam, "Ptr", rc, "Ptr", hBrush)
+            DllCall("DeleteObject", "Ptr", hBrush)
             return 1
         }
 
         if msg = WM_PAINT {
-            ps := DM_PAINTSTRUCT()
-            hdc := DllCall("BeginPaint", "Ptr", hwnd, "Ptr", ps.Ptr, "Ptr")
+            ps := Buffer(A_PtrSize = 8 ? 72 : 64, 0)
+            hdc := DllCall("BeginPaint", "Ptr", hwnd, "Ptr", ps, "Ptr")
 
             ; Get client rect
-            rcClient := DM_RECT()
+            rcClient := Buffer(16)
             DllCall("GetClientRect", "Ptr", hwnd, "Ptr", rcClient)
-            clientW := rcClient.right
-            clientH := rcClient.bottom
+            clientW := NumGet(rcClient, 8, "Int")
+            clientH := NumGet(rcClient, 12, "Int")
 
             ; Use double buffering to prevent artifacts
             hdcMem := DllCall("CreateCompatibleDC", "Ptr", hdc, "Ptr")
             hBitmap := DllCall("CreateCompatibleBitmap", "Ptr", hdc, "Int", clientW, "Int", clientH, "Ptr")
             hOldBitmap := DllCall("SelectObject", "Ptr", hdcMem, "Ptr", hBitmap, "Ptr")
 
-            ; Fill background (draw to memory DC) with cached brushes — do not delete them
-            DllCall("FillRect", "Ptr", hdcMem, "Ptr", rcClient, "Ptr", DarkTheme.GetBrush("Background"), "Void")
+            ; Fill background (draw to memory DC)
+            hBrush := DllCall("CreateSolidBrush", "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Background"]), "Ptr")
+            DllCall("FillRect", "Ptr", hdcMem, "Ptr", rcClient, "Ptr", hBrush)
+            DllCall("DeleteObject", "Ptr", hBrush)
 
             ; Get channel rect (use actual Windows position)
-            rcChannel := DM_RECT()
+            rcChannel := Buffer(16, 0)
             SendMessage(TBM_GETCHANNELRECT, 0, rcChannel.Ptr, hwnd)
 
             ; Draw track/channel using actual rect from Windows
-            DllCall("FillRect", "Ptr", hdcMem, "Ptr", rcChannel, "Ptr", DarkTheme.GetBrush("Controls"), "Void")
+            hBrush := DllCall("CreateSolidBrush", "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Controls"]), "Ptr")
+            DllCall("FillRect", "Ptr", hdcMem, "Ptr", rcChannel, "Ptr", hBrush)
+            DllCall("DeleteObject", "Ptr", hBrush)
 
             ; Get thumb rect
-            rcThumb := DM_RECT()
+            rcThumb := Buffer(16, 0)
             SendMessage(TBM_GETTHUMBRECT, 0, rcThumb.Ptr, hwnd)
-            thumbLeft := rcThumb.left
-            thumbTop := rcThumb.top
-            thumbRight := rcThumb.right
-            thumbBottom := rcThumb.bottom
+            thumbLeft := NumGet(rcThumb, 0, "Int")
+            thumbTop := NumGet(rcThumb, 4, "Int")
+            thumbRight := NumGet(rcThumb, 8, "Int")
+            thumbBottom := NumGet(rcThumb, 12, "Int")
 
             ; Calculate perfect circle (use smaller dimension as diameter + extra size)
             thumbW := thumbRight - thumbLeft
@@ -2581,14 +2432,14 @@ class _DarkSlider extends Gui.Slider {
             DllCall("gdiplus\GdipDeleteGraphics", "Ptr", pGraphics)
 
             ; Blit from memory DC to screen DC
-            DllCall("BitBlt", "Ptr", hdc, "Int", 0, "Int", 0, "Int", clientW, "Int", clientH, "Ptr", hdcMem, "Int", 0, "Int", 0, "UInt", 0x00CC0020, "Void")  ; SRCCOPY
+            DllCall("BitBlt", "Ptr", hdc, "Int", 0, "Int", 0, "Int", clientW, "Int", clientH, "Ptr", hdcMem, "Int", 0, "Int", 0, "UInt", 0x00CC0020)  ; SRCCOPY
 
             ; Clean up memory DC
-            DllCall("SelectObject", "Ptr", hdcMem, "Ptr", hOldBitmap, "Void")
-            DllCall("DeleteObject", "Ptr", hBitmap, "Void")
-            DllCall("DeleteDC", "Ptr", hdcMem, "Void")
+            DllCall("SelectObject", "Ptr", hdcMem, "Ptr", hOldBitmap, "Ptr")
+            DllCall("DeleteObject", "Ptr", hBitmap)
+            DllCall("DeleteDC", "Ptr", hdcMem)
 
-            DllCall("EndPaint", "Ptr", hwnd, "Ptr", ps.Ptr, "Void")
+            DllCall("EndPaint", "Ptr", hwnd, "Ptr", ps)
             return 0
         }
 
@@ -2653,337 +2504,6 @@ class _DarkCheckBox {
 }
 
 /**
- * Dark-themed MonthCal (SysMonthCal32) date picker.
- *
- * The visual-styled MonthCal ignores `MCM_SETCOLOR` and always renders with the
- * light system theme. Stripping the theme (`SetWindowTheme(hwnd, "", "")`) forces
- * classic rendering, which DOES honor `MCM_SETCOLOR` — so the background, day
- * text, title bar, and trailing (adjacent-month) days all go dark. Classic
- * rendering draws light 3D prev/next nav buttons, so a `WM_PAINT` subclass
- * overpaints those two buttons dark with a flat chevron.
- */
-class _DarkMonthCal {
-    static Callbacks := Map()
-    static OldProcs  := Map()
-
-    static ApplyDarkMode(mc) {
-        static MCM_SETCOLOR := 0x100A
-        static MCSC_BACKGROUND := 0, MCSC_TEXT := 1, MCSC_TITLEBK := 2
-        static MCSC_TITLETEXT := 3, MCSC_MONTHBK := 4, MCSC_TRAILINGTEXT := 5
-        DllCall("uxtheme\SetWindowTheme", "Ptr", mc.Hwnd, "Str", "", "Str", "")
-        SendMessage(MCM_SETCOLOR, MCSC_BACKGROUND,   DarkTheme.RGBtoBGR(DarkTheme.Colors["Background"]), mc)
-        SendMessage(MCM_SETCOLOR, MCSC_MONTHBK,      DarkTheme.RGBtoBGR(DarkTheme.Colors["Background"]), mc)
-        SendMessage(MCM_SETCOLOR, MCSC_TEXT,         DarkTheme.RGBtoBGR(DarkTheme.Colors["Font"]), mc)
-        SendMessage(MCM_SETCOLOR, MCSC_TITLEBK,      DarkTheme.RGBtoBGR(DarkTheme.Colors["Header"]), mc)
-        SendMessage(MCM_SETCOLOR, MCSC_TITLETEXT,    DarkTheme.RGBtoBGR(DarkTheme.Colors["Font"]), mc)
-        SendMessage(MCM_SETCOLOR, MCSC_TRAILINGTEXT, DarkTheme.RGBtoBGR(DarkTheme.Colors["FontDim"]), mc)
-        Subclass.Install(mc.Hwnd, ObjBindMethod(this, "Proc", mc.Hwnd), this.Callbacks, this.OldProcs)
-        DllCall("InvalidateRect", "Ptr", mc.Hwnd, "Ptr", 0, "Int", 1, "Void")
-    }
-
-    static Remove(hwnd) {
-        Subclass.Uninstall(hwnd, this.Callbacks, this.OldProcs)
-    }
-
-    static Proc(targetHwnd, hwnd, msg, wParam, lParam) {
-        static WM_PAINT := 0x000F
-        if hwnd != targetHwnd
-            return Subclass.CallOriginal(this.OldProcs[targetHwnd], hwnd, msg, wParam, lParam)
-        if msg = WM_PAINT {
-            ret := Subclass.CallOriginal(this.OldProcs[targetHwnd], hwnd, msg, wParam, lParam)
-            this._PaintNavButtons(targetHwnd)
-            return ret
-        }
-        return Subclass.CallOriginal(this.OldProcs[targetHwnd], hwnd, msg, wParam, lParam)
-    }
-
-    /** Overpaints the two classic 3D nav buttons with the title background and a flat chevron. */
-    static _PaintNavButtons(hwnd) {
-        rects := this._NavButtonRects(hwnd)
-        if !rects
-            return
-        hdc := DllCall("GetDC", "Ptr", hwnd, "Ptr")
-        if !hdc
-            return
-        for i, b in rects {
-            ; Pad 1px so the classic 3D edge is fully covered; the title bar behind is also Header.
-            rc := DM_RECT()
-            rc.left := b[1] - 1, rc.top := b[2] - 1, rc.right := b[3] + 1, rc.bottom := b[4] + 1
-            DllCall("FillRect", "Ptr", hdc, "Ptr", rc, "Ptr", DarkTheme.GetSolidBrush(DarkTheme.Colors["Header"]), "Void")
-            this._Chevron(hdc, (b[1] + b[3]) // 2, (b[2] + b[4]) // 2, DarkTheme.Scale(4), i = 1)
-        }
-        DllCall("ReleaseDC", "Ptr", hwnd, "Ptr", hdc, "Void")
-    }
-
-    /** Returns [prevRect, nextRect] (client coords) by hit-testing each nav button
-     *  directly, or 0 if either hit didn't land on a button. */
-    static _NavButtonRects(hwnd) {
-        rcClient := DM_RECT()
-        DllCall("GetClientRect", "Ptr", hwnd, "Ptr", rcClient)
-        cw := rcClient.right
-        prev := this._HitRect(hwnd, DarkTheme.Scale(20), DarkTheme.Scale(12), cw)
-        next := this._HitRect(hwnd, cw - DarkTheme.Scale(20), DarkTheme.Scale(12), cw)
-        return (prev && next) ? [prev, next] : 0
-    }
-
-    /** Hit-tests (x,y) and returns the hit area's rect [L,T,R,B] when it's a small
-     *  (button-sized) area, else 0. comctl6+ fills MCHITTESTINFO.rc with the area rect. */
-    static _HitRect(hwnd, x, y, cw) {
-        static MCM_HITTEST := 0x100E
-        ht := DM_MCHITTESTINFO()
-        ht.cbSize := ht.Size
-        ht.pt.x := x, ht.pt.y := y
-        DllCall("SendMessage", "Ptr", hwnd, "UInt", MCM_HITTEST, "Ptr", 0, "Ptr", ht.Ptr)
-        w := ht.rc.right - ht.rc.left
-        if w <= 0 || w >= cw // 2
-            return 0
-        return [ht.rc.left, ht.rc.top, ht.rc.right, ht.rc.bottom]
-    }
-
-    /** Filled flat chevron — left-pointing when prev, right-pointing otherwise. */
-    static _Chevron(hdc, cx, cy, r, prev) {
-        tri := DM_TRIANGLE()
-        if prev {
-            tri.p[1].x := cx + r, tri.p[1].y := cy - r
-            tri.p[2].x := cx + r, tri.p[2].y := cy + r
-            tri.p[3].x := cx - r, tri.p[3].y := cy
-        } else {
-            tri.p[1].x := cx - r, tri.p[1].y := cy - r
-            tri.p[2].x := cx - r, tri.p[2].y := cy + r
-            tri.p[3].x := cx + r, tri.p[3].y := cy
-        }
-        col := DarkTheme.Colors["Font"]
-        oB := DllCall("SelectObject", "Ptr", hdc, "Ptr", DarkTheme.GetSolidBrush(col), "Ptr")
-        oP := DllCall("SelectObject", "Ptr", hdc, "Ptr", DarkTheme.GetPen(col), "Ptr")
-        DllCall("Polygon", "Ptr", hdc, "Ptr", tri.Ptr, "Int", 3, "Void")
-        DllCall("SelectObject", "Ptr", hdc, "Ptr", oB, "Void")
-        DllCall("SelectObject", "Ptr", hdc, "Ptr", oP, "Void")
-    }
-}
-
-/**
- * Owner-draw dark status bar (msctls_statusbar32).
- *
- * The control has no text-color message, so each part is flagged SBT_OWNERDRAW and
- * painted in {@link DarkWindowProc}'s WM_DRAWITEM handler ({@link _DarkStatusBar.DrawPart}).
- * `SB_SETBKCOLOR` darkens the bar fill and the sizing-grip area. An instance `Text`
- * property is added so `sb.Text := "..."` works alongside the native `SetText`.
- */
-class _DarkStatusBar {
-    /** @type {Map} sbHwnd -> Map(partIndex -> text string) */
-    static Texts := Map()
-    static Callbacks := Map()
-    static OldProcs := Map()
-
-    static ApplyDarkMode(sb) {
-        static SB_SETBKCOLOR := 0x2001
-        hwnd := sb.Hwnd
-        ; Strip visual styles (both strings empty) so the classic flat renderer honors
-        ; SBT_NOBORDERS and our owner-draw fill. The status bar class has no dark theme,
-        ; so "DarkMode_Explorer" would leave a light SP_PANE border framing each part.
-        DllCall("uxtheme\SetWindowTheme", "Ptr", hwnd, "Str", "", "Str", "")
-        SendMessage(SB_SETBKCOLOR, 0, DarkTheme.RGBtoBGR(DarkTheme.Colors["Controls"]), sb)
-        ; SBARS_SIZEGRIP can't be cleared after creation — COMCTL32 ignores WM_STYLECHANGED
-        ; (MS KB Q177341), and AHK creates the bar internally. So subclass WM_PAINT and
-        ; overpaint the light grip corner dark instead (see GripProc / _PaintGripOver).
-        ; The window still resizes from its frame and the (now invisible) grip still drags.
-        Subclass.Install(hwnd, ObjBindMethod(this, "GripProc", hwnd), this.Callbacks, this.OldProcs)
-        this.Texts[hwnd] := Map()
-
-        ; No SB_SETTEXTCOLOR exists — override SetText to store the string and flag the
-        ; part SBT_OWNERDRAW, then paint it dark from the parent's WM_DRAWITEM.
-        sb.DefineProp("SetText", { Call: ObjBindMethod(this, "_SetText") })
-        ; Convenience: sb.Text := "..." routes to the owner-draw SetText (part 1).
-        sb.DefineProp("Text", {
-            Get: (s) => _DarkStatusBar.Texts.Get(s.Hwnd, Map()).Get(0, ""),
-            Set: (s, value) => (_DarkStatusBar._SetText(s, value, 1), value)
-        })
-        ; Establish owner-draw mode on part 0 (Gui.StatusBar has no GetText, so the
-        ; caller's creation text is re-applied by DarkGui.Add right after this).
-        sb.SetText("")
-    }
-
-    static _SetText(sb, text, part := 1, *) {
-        static SB_SETTEXTW := 0x40B
-        static SBT_OWNERDRAW := 0x1000
-        static SBT_NOBORDERS := 0x0100  ; drop the sunken 3D part border
-        idx := part - 1
-        if this.Texts.Has(sb.Hwnd)
-            this.Texts[sb.Hwnd][idx] := text
-        ; wParam = part index | type flags; lParam = app data (reuse the index)
-        SendMessage(SB_SETTEXTW, idx | SBT_OWNERDRAW | SBT_NOBORDERS, idx, sb)
-    }
-
-    /** Paints one owner-drawn part. Called from DarkWindowProc on WM_DRAWITEM. */
-    static DrawPart(dis) {
-        static DT_SINGLELINE := 0x20, DT_VCENTER := 0x4, DT_LEFT := 0x0, DT_END_ELLIPSIS := 0x8000
-        texts := this.Texts.Get(dis.hwndItem, "")
-        if !texts
-            return
-        text := texts.Has(dis.itemID) ? texts[dis.itemID] : ""
-        rc := DM_RECT()
-        rc.left := dis.rcItem.left, rc.top := dis.rcItem.top
-        rc.right := dis.rcItem.right, rc.bottom := dis.rcItem.bottom
-        DllCall("FillRect", "Ptr", dis.hDC, "Ptr", rc, "Ptr", DarkTheme.GetBrush("Controls"), "Void")
-        if text = ""
-            return
-        rc.left += DarkTheme.Scale(4)
-        DllCall("SetBkMode", "Ptr", dis.hDC, "Int", 1, "Void")
-        DllCall("SetTextColor", "Ptr", dis.hDC, "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Font"]), "Void")
-        DllCall("DrawTextW", "Ptr", dis.hDC, "Str", text, "Int", -1, "Ptr", rc,
-            "UInt", DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_END_ELLIPSIS, "Void")
-    }
-
-    /**
-     * Status-bar subclass proc. After the control paints itself (parts owner-draw via
-     * the parent's WM_DRAWITEM), overpaint the light sizing-grip corner with the dark
-     * Header brush so the grip disappears into the bar.
-     */
-    static GripProc(targetHwnd, hwnd, msg, wParam, lParam) {
-        static WM_PAINT := 0x000F
-        if hwnd != targetHwnd
-            return Subclass.CallOriginal(this.OldProcs[targetHwnd], hwnd, msg, wParam, lParam)
-        if msg = WM_PAINT {
-            ret := Subclass.CallOriginal(this.OldProcs[targetHwnd], hwnd, msg, wParam, lParam)
-            this._PaintGripOver(hwnd)
-            return ret
-        }
-        return Subclass.CallOriginal(this.OldProcs[targetHwnd], hwnd, msg, wParam, lParam)
-    }
-
-    /** Fills the bottom-right grip square (side = bar height) with the Controls brush. */
-    static _PaintGripOver(hwnd) {
-        rc := DM_RECT()
-        DllCall("GetClientRect", "Ptr", hwnd, "Ptr", rc)
-        grip := DM_RECT()
-        grip.left := rc.right - rc.bottom, grip.top := 0
-        grip.right := rc.right, grip.bottom := rc.bottom
-        hdc := DllCall("GetDC", "Ptr", hwnd, "Ptr")
-        DllCall("FillRect", "Ptr", hdc, "Ptr", grip, "Ptr", DarkTheme.GetBrush("Controls"), "Void")
-        DllCall("ReleaseDC", "Ptr", hwnd, "Ptr", hdc, "Void")
-    }
-
-    static Remove(hwnd) {
-        Subclass.Uninstall(hwnd, this.Callbacks, this.OldProcs)
-        this.Texts.Delete(hwnd)
-    }
-}
-
-/**
- * Owner-draw dark up-down (spinner) control.
- *
- * Keeps the native increment / auto-repeat logic — only WM_PAINT and WM_ERASEBKGND
- * are taken over, so clicks still reach the original proc and drive the buddy Edit.
- * Pairs with a dark numeric Edit for a NumericUpDown look.
- */
-class _DarkUpDown {
-    static Callbacks := Map()
-    static OldProcs := Map()
-
-    static ApplyDarkMode(ud) {
-        DllCall("uxtheme\SetWindowTheme", "Ptr", ud.Hwnd, "Str", "DarkMode_Explorer", "Ptr", 0)
-        Subclass.Install(ud.Hwnd, ObjBindMethod(this, "Proc", ud.Hwnd), this.Callbacks, this.OldProcs)
-        DllCall("InvalidateRect", "Ptr", ud.Hwnd, "Ptr", 0, "Int", 1, "Void")
-    }
-
-    static Remove(hwnd) {
-        Subclass.Uninstall(hwnd, this.Callbacks, this.OldProcs)
-    }
-
-    static Proc(targetHwnd, hwnd, msg, wParam, lParam) {
-        static WM_PAINT := 0x000F
-        static WM_ERASEBKGND := 0x0014
-        if hwnd != targetHwnd
-            return Subclass.CallOriginal(this.OldProcs[targetHwnd], hwnd, msg, wParam, lParam)
-        if msg = WM_ERASEBKGND
-            return 1
-        if msg = WM_PAINT {
-            this.Paint(hwnd)
-            return 0
-        }
-        return Subclass.CallOriginal(this.OldProcs[targetHwnd], hwnd, msg, wParam, lParam)
-    }
-
-    static Paint(hwnd) {
-        ps := DM_PAINTSTRUCT()
-        hdc := DllCall("BeginPaint", "Ptr", hwnd, "Ptr", ps.Ptr, "Ptr")
-        rc := DM_RECT()
-        DllCall("GetClientRect", "Ptr", hwnd, "Ptr", rc)
-        w := rc.right, h := rc.bottom
-
-        DllCall("FillRect", "Ptr", hdc, "Ptr", rc, "Ptr", DarkTheme.GetBrush("Controls"), "Void")
-        midY := h // 2
-
-        ; Divider between the two arrow halves
-        oldPen := DllCall("SelectObject", "Ptr", hdc, "Ptr", DarkTheme.GetPen(DarkTheme.Colors["ButtonBorder"]), "Ptr")
-        DllCall("MoveToEx", "Ptr", hdc, "Int", 0, "Int", midY, "Ptr", 0, "Void")
-        DllCall("LineTo", "Ptr", hdc, "Int", w, "Int", midY, "Void")
-        DllCall("SelectObject", "Ptr", hdc, "Ptr", oldPen, "Void")
-
-        aw := Max(3, w // 4)
-        cx := w // 2
-        this._Arrow(hdc, cx, midY // 2, aw, true)
-        this._Arrow(hdc, cx, midY + midY // 2, aw, false)
-
-        DllCall("EndPaint", "Ptr", hwnd, "Ptr", ps.Ptr, "Void")
-    }
-
-    /** Filled triangle pointing up (up=true) or down, centered at (cx, cy). */
-    static _Arrow(hdc, cx, cy, r, up) {
-        tri := DM_TRIANGLE()
-        if up {
-            tri.p[1].x := cx - r, tri.p[1].y := cy + r // 2
-            tri.p[2].x := cx + r, tri.p[2].y := cy + r // 2
-            tri.p[3].x := cx,     tri.p[3].y := cy - r // 2
-        } else {
-            tri.p[1].x := cx - r, tri.p[1].y := cy - r // 2
-            tri.p[2].x := cx + r, tri.p[2].y := cy - r // 2
-            tri.p[3].x := cx,     tri.p[3].y := cy + r // 2
-        }
-        oB := DllCall("SelectObject", "Ptr", hdc, "Ptr", DarkTheme.GetSolidBrush(DarkTheme.Colors["Font"]), "Ptr")
-        oP := DllCall("SelectObject", "Ptr", hdc, "Ptr", DarkTheme.GetPen(DarkTheme.Colors["Font"]), "Ptr")
-        DllCall("Polygon", "Ptr", hdc, "Ptr", tri.Ptr, "Int", 3, "Void")
-        DllCall("SelectObject", "Ptr", hdc, "Ptr", oB, "Void")
-        DllCall("SelectObject", "Ptr", hdc, "Ptr", oP, "Void")
-    }
-}
-
-/**
- * Dark SysLink (hyperlink) control.
- *
- * The surrounding text and background are handled by {@link DarkWindowProc}'s
- * WM_CTLCOLORSTATIC; the clickable link segments are recolored to
- * `DarkTheme.Colors["Link"]` via NM_CUSTOMDRAW (dispatched from DarkWindowProc's
- * WM_NOTIFY), since SysLink exposes no link-color message.
- */
-class _DarkLink {
-    static ApplyDarkMode(link) {
-        DarkTheme.AllowDarkMode(link.Hwnd)
-        link.SetFont("c" Format("{:X}", DarkTheme.Colors["Font"]))
-        DarkWindowProc.LinkControls[link.Hwnd] := true
-    }
-
-    /** NM_CUSTOMDRAW handler; returns the CDRF_* result for the parent window proc. */
-    static OnCustomDraw(lParam) {
-        static CDDS_PREPAINT := 0x1, CDDS_ITEMPREPAINT := 0x10001
-        static CDRF_DODEFAULT := 0x0, CDRF_NOTIFYITEMDRAW := 0x20
-        nmcd := DM_NMCUSTOMDRAW.At(lParam)
-        switch nmcd.dwDrawStage {
-            case CDDS_PREPAINT:
-                return CDRF_NOTIFYITEMDRAW
-            case CDDS_ITEMPREPAINT:
-                DllCall("SetTextColor", "Ptr", nmcd.hdc, "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Link"]), "Void")
-                return CDRF_DODEFAULT
-        }
-        return CDRF_DODEFAULT
-    }
-
-    static Remove(hwnd) {
-        DarkWindowProc.LinkControls.Delete(hwnd)
-    }
-}
-
-/**
  * Custom-draw GroupBox: fills background, draws dim border, renders title in Font color.
  * WM_CTLCOLORBTN does not control GroupBox text color — a WM_PAINT subclass is required.
  */
@@ -3004,7 +2524,7 @@ class _DarkGroupBox {
         DllCall("GetWindowText", "Ptr", hwnd, "Ptr", buf, "Int", 256)
         this.GroupTexts[hwnd] := StrGet(buf)
         Subclass.Install(hwnd, ObjBindMethod(this, "Proc", hwnd), this.Callbacks, this.OldProcs)
-        DllCall("InvalidateRect", "Ptr", hwnd, "Ptr", 0, "Int", 1, "Void")
+        DllCall("InvalidateRect", "Ptr", hwnd, "Ptr", 0, "Int", 1)
     }
 
     /**
@@ -3021,9 +2541,9 @@ class _DarkGroupBox {
         static WM_PAINT      := 0x000F
         static WM_ERASEBKGND := 0x0014
         if msg = WM_ERASEBKGND {
-            rc := DM_RECT()
+            rc := Buffer(16)
             DllCall("GetClientRect", "Ptr", targetHwnd, "Ptr", rc)
-            DllCall("FillRect", "Ptr", wParam, "Ptr", rc, "Ptr", DarkTheme.GetBrush("Background"), "Void")
+            DllCall("FillRect", "Ptr", wParam, "Ptr", rc, "Ptr", DarkTheme.GetBrush("Background"))
             return 1
         }
         if msg = WM_PAINT {
@@ -3034,63 +2554,65 @@ class _DarkGroupBox {
     }
 
     static Paint(hwnd) {
-        ps  := DM_PAINTSTRUCT()
-        hdc := DllCall("BeginPaint", "Ptr", hwnd, "Ptr", ps.Ptr, "Ptr")
+        ps  := Buffer(72, 0)
+        hdc := DllCall("BeginPaint", "Ptr", hwnd, "Ptr", ps, "Ptr")
 
-        rc := DM_RECT()
+        rc := Buffer(16)
         DllCall("GetClientRect", "Ptr", hwnd, "Ptr", rc)
-        w := rc.right
-        h := rc.bottom
+        w := NumGet(rc, 8, "Int")
+        h := NumGet(rc, 12, "Int")
 
         ; Fill entire background
-        DllCall("FillRect", "Ptr", hdc, "Ptr", rc, "Ptr", DarkTheme.GetBrush("Background"), "Void")
+        DllCall("FillRect", "Ptr", hdc, "Ptr", rc, "Ptr", DarkTheme.GetBrush("Background"))
 
         ; Select control font so text metrics are accurate
         hFont   := DllCall("SendMessage", "Ptr", hwnd, "UInt", 0x31, "Ptr", 0, "Ptr", 0, "Ptr")
         oldFont := hFont ? DllCall("SelectObject", "Ptr", hdc, "Ptr", hFont, "Ptr") : 0
 
         ; Measure font height
-        tm := DM_TEXTMETRICW()
-        DllCall("GetTextMetricsW", "Ptr", hdc, "Ptr", tm.Ptr)
-        tmH := tm.tmHeight
+        tm := Buffer(60, 0)
+        DllCall("GetTextMetrics", "Ptr", hdc, "Ptr", tm)
+        tmH := NumGet(tm, 0, "Int")  ; tmHeight
 
         ; Measure title text width
-        groupText := this.GroupTexts.Get(hwnd, "")
-        sz := DM_SIZE()
-        DllCall("GetTextExtentPoint32W", "Ptr", hdc, "Str", groupText, "Int", StrLen(groupText), "Ptr", sz.Ptr)
-        textW := sz.cx
+        groupText := this.GroupTexts.Has(hwnd) ? this.GroupTexts[hwnd] : ""
+        sz    := Buffer(8, 0)
+        DllCall("GetTextExtentPoint32", "Ptr", hdc, "Str", groupText, "Int", StrLen(groupText), "Ptr", sz)
+        textW := NumGet(sz, 0, "Int")
 
         textX   := DarkTheme.Scale(9)
         borderY := tmH // 2
 
-        ; Draw hollow border rectangle (NULL_BRUSH = stock 5, no fill).
-        ; Border pen is cached by DarkTheme — do not delete it.
+        ; Draw hollow border rectangle (NULL_BRUSH = stock 5, no fill)
+        borderBGR := DarkTheme.RGBtoBGR(DarkTheme.Colors["Border"])
+        hPen  := DllCall("CreatePen",      "Int", 0, "Int", 1, "UInt", borderBGR, "Ptr")
         hNull := DllCall("GetStockObject", "Int", 5, "Ptr")
-        oPen  := DllCall("SelectObject", "Ptr", hdc, "Ptr", DarkTheme.GetPen(DarkTheme.Colors["Border"]), "Ptr")
+        oPen  := DllCall("SelectObject", "Ptr", hdc, "Ptr", hPen,  "Ptr")
         oBr   := DllCall("SelectObject", "Ptr", hdc, "Ptr", hNull, "Ptr")
-        DllCall("RoundRect", "Ptr", hdc, "Int", 0, "Int", borderY, "Int", w, "Int", h, "Int", 8, "Int", 8, "Void")
-        DllCall("SelectObject", "Ptr", hdc, "Ptr", oPen, "Void")
-        DllCall("SelectObject", "Ptr", hdc, "Ptr", oBr, "Void")
+        DllCall("RoundRect", "Ptr", hdc, "Int", 0, "Int", borderY, "Int", w, "Int", h, "Int", 8, "Int", 8)
+        DllCall("SelectObject", "Ptr", hdc, "Ptr", oPen)
+        DllCall("SelectObject", "Ptr", hdc, "Ptr", oBr)
+        DllCall("DeleteObject", "Ptr", hPen)
 
         ; Punch a background-colored gap in the top border line where the title sits
         if StrLen(groupText) > 0 {
-            gapRc := DM_RECT()
-            gapRc.left := textX - 2,        gapRc.top := borderY - 1
-            gapRc.right := textX + textW + 2, gapRc.bottom := borderY + 1
-            DllCall("FillRect", "Ptr", hdc, "Ptr", gapRc, "Ptr", DarkTheme.GetBrush("Background"), "Void")
+            gapRc := Buffer(16)
+            NumPut("Int", textX - 2,         "Int", borderY - 1,
+                   "Int", textX + textW + 2,  "Int", borderY + 1, gapRc)
+            DllCall("FillRect", "Ptr", hdc, "Ptr", gapRc, "Ptr", DarkTheme.GetBrush("Background"))
         }
 
         ; Draw title text in Font color (TRANSPARENT background mode)
-        DllCall("SetBkMode",    "Ptr", hdc, "Int", 1, "Void")
-        DllCall("SetTextColor", "Ptr", hdc, "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Font"]), "Void")
-        textRc := DM_RECT()
-        textRc.left := textX, textRc.top := 0, textRc.right := textX + textW + 4, textRc.bottom := tmH
+        DllCall("SetBkMode",    "Ptr", hdc, "Int", 1)
+        DllCall("SetTextColor", "Ptr", hdc, "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Font"]))
+        textRc := Buffer(16)
+        NumPut("Int", textX, "Int", 0, "Int", textX + textW + 4, "Int", tmH, textRc)
         static DT_SINGLELINE := 0x20
-        DllCall("DrawTextW", "Ptr", hdc, "Str", groupText, "Int", -1, "Ptr", textRc, "UInt", DT_SINGLELINE, "Void")
+        DllCall("DrawText", "Ptr", hdc, "Str", groupText, "Int", -1, "Ptr", textRc, "UInt", DT_SINGLELINE)
 
         if oldFont
-            DllCall("SelectObject", "Ptr", hdc, "Ptr", oldFont, "Void")
-        DllCall("EndPaint", "Ptr", hwnd, "Ptr", ps.Ptr, "Void")
+            DllCall("SelectObject", "Ptr", hdc, "Ptr", oldFont)
+        DllCall("EndPaint", "Ptr", hwnd, "Ptr", ps)
     }
 }
 
@@ -3124,11 +2646,22 @@ class _DarkTab {
         hwnd := ctrl.Hwnd
         ; Register this control as dark-aware with the OS theme engine
         DllCall("uxtheme\SetWindowTheme", "Ptr", hwnd, "Str", "DarkMode_Explorer", "Ptr", 0)
-        DarkTheme.AllowDarkMode(hwnd, true)
+        this._AllowDarkMode(hwnd, true)
         ; Remove sunken edge — we draw our own border (none, by design)
         DarkTheme.RemoveBorder(hwnd)
         Subclass.Install(hwnd, ObjBindMethod(this, "Proc", hwnd), this.Callbacks, this.OldProcs)
-        DllCall("InvalidateRect", "Ptr", hwnd, "Ptr", 0, "Int", 1, "Void")
+        DllCall("InvalidateRect", "Ptr", hwnd, "Ptr", 0, "Int", 1)
+    }
+
+    static _AllowDarkMode(hwnd, allow) {
+        try {
+            uxtheme := DllCall("GetModuleHandle", "Str", "uxtheme", "Ptr")
+            if uxtheme {
+                fn := DllCall("GetProcAddress", "Ptr", uxtheme, "Ptr", 133, "Ptr")
+                if fn
+                    DllCall(fn, "Ptr", hwnd, "Int", allow ? 1 : 0)
+            }
+        }
     }
 
     /**
@@ -3137,7 +2670,7 @@ class _DarkTab {
      * @param {Ptr} hwnd - Tab3 window handle.
      */
     static Remove(hwnd) {
-        DarkTheme.AllowDarkMode(hwnd, false)
+        this._AllowDarkMode(hwnd, false)
         Subclass.Uninstall(hwnd, this.Callbacks, this.OldProcs)
     }
 
@@ -3166,22 +2699,22 @@ class _DarkTab {
             ; This eliminates the flash that comes from WM_ERASEBKGND + WM_PAINT
             ; writing to the screen twice, and GetDCEx/GetDC reliability issues.
             static SRCCOPY := 0xCC0020
-            ps := DM_PAINTSTRUCT()
-            hdc := DllCall("BeginPaint", "Ptr", targetHwnd, "Ptr", ps.Ptr, "Ptr")
-            rcBuf := DM_RECT()
+            ps := Buffer(72, 0)
+            hdc := DllCall("BeginPaint", "Ptr", targetHwnd, "Ptr", ps, "Ptr")
+            rcBuf := Buffer(16)
             DllCall("GetClientRect", "Ptr", targetHwnd, "Ptr", rcBuf)
-            w := rcBuf.right
-            h := rcBuf.bottom
+            w := NumGet(rcBuf, 8, "Int")
+            h := NumGet(rcBuf, 12, "Int")
             hdcMem  := DllCall("CreateCompatibleDC",     "Ptr", hdc, "Ptr")
             hBmp    := DllCall("CreateCompatibleBitmap", "Ptr", hdc, "Int", w, "Int", h, "Ptr")
             hBmpOld := DllCall("SelectObject", "Ptr", hdcMem, "Ptr", hBmp, "Ptr")
             this.PaintTabs(targetHwnd, hdcMem)
             DllCall("BitBlt", "Ptr", hdc, "Int", 0, "Int", 0, "Int", w, "Int", h,
-                "Ptr", hdcMem, "Int", 0, "Int", 0, "UInt", SRCCOPY, "Void")
-            DllCall("SelectObject", "Ptr", hdcMem, "Ptr", hBmpOld, "Void")
-            DllCall("DeleteObject", "Ptr", hBmp, "Void")
-            DllCall("DeleteDC",     "Ptr", hdcMem, "Void")
-            DllCall("EndPaint", "Ptr", targetHwnd, "Ptr", ps.Ptr, "Void")
+                "Ptr", hdcMem, "Int", 0, "Int", 0, "UInt", SRCCOPY)
+            DllCall("SelectObject", "Ptr", hdcMem, "Ptr", hBmpOld)
+            DllCall("DeleteObject", "Ptr", hBmp)
+            DllCall("DeleteDC",     "Ptr", hdcMem)
+            DllCall("EndPaint", "Ptr", targetHwnd, "Ptr", ps)
             return 0
         }
         return Subclass.CallOriginal(this.OldProcs[targetHwnd], hwnd, msg, wParam, lParam)
@@ -3211,13 +2744,13 @@ class _DarkTab {
         static NULL_PEN         := 8      ; GetStockObject(8)
 
         ; Geometry
-        clientRc := DM_RECT()
+        clientRc := Buffer(16)
         DllCall("GetClientRect", "Ptr", hwnd, "Ptr", clientRc)
-        w := clientRc.right
-        h := clientRc.bottom
+        w := NumGet(clientRc, 8, "Int")
+        h := NumGet(clientRc, 12, "Int")
 
         ; Fill entire background — no tab-control border
-        DllCall("FillRect", "Ptr", hdc, "Ptr", clientRc, "Ptr", DarkTheme.GetBrush("Background"), "Void")
+        DllCall("FillRect", "Ptr", hdc, "Ptr", clientRc, "Ptr", DarkTheme.GetBrush("Background"))
 
         selIdx := DllCall("SendMessage", "Ptr", hwnd, "UInt", TCM_GETCURSEL,    "Ptr", 0, "Ptr", 0, "Int")
         tabCount := DllCall("SendMessage", "Ptr", hwnd, "UInt", TCM_GETITEMCOUNT, "Ptr", 0, "Ptr", 0, "Int")
@@ -3225,71 +2758,80 @@ class _DarkTab {
             return
 
         ; Content area top = tab strip bottom (for separator line)
-        adjRc := DM_RECT()
-        adjRc.left := 0, adjRc.top := 0, adjRc.right := w, adjRc.bottom := h
+        adjRc := Buffer(16)
+        NumPut("Int", 0, "Int", 0, "Int", w, "Int", h, adjRc)
         DllCall("SendMessage", "Ptr", hwnd, "UInt", TCM_ADJUSTRECT, "Ptr", 0, "Ptr", adjRc)
-        tabStripBottom := adjRc.top
+        tabStripBottom := NumGet(adjRc, 4, "Int")
 
         ; Select control font
         hFont   := DllCall("SendMessage", "Ptr", hwnd, "UInt", 0x31, "Ptr", 0, "Ptr", 0, "Ptr")
         oldFont := hFont ? DllCall("SelectObject", "Ptr", hdc, "Ptr", hFont, "Ptr") : 0
-        DllCall("SetBkMode", "Ptr", hdc, "Int", 1, "Void")  ; TRANSPARENT
+        DllCall("SetBkMode", "Ptr", hdc, "Int", 1)  ; TRANSPARENT
 
         hNullPen := DllCall("GetStockObject", "Int", NULL_PEN, "Ptr")
 
+        ; TCITEMW struct offsets (64-bit: pszText@16, cchTextMax@24; 32-bit: @12, @16)
+        pszTextOff := A_PtrSize = 8 ? 16 : 12
+        cchMaxOff  := A_PtrSize = 8 ? 24 : 16
+        tcItemSz   := A_PtrSize = 8 ? 40 : 28
+
         loop tabCount {
             i := A_Index - 1
-            itemRc := DM_RECT()
+            itemRc := Buffer(16)
             DllCall("SendMessage", "Ptr", hwnd, "UInt", TCM_GETITEMRECT, "Ptr", i, "Ptr", itemRc)
-            left   := itemRc.left
-            top    := itemRc.top
-            right  := itemRc.right
-            bottom := itemRc.bottom
+            left   := NumGet(itemRc, 0,  "Int")
+            top    := NumGet(itemRc, 4,  "Int")
+            right  := NumGet(itemRc, 8,  "Int")
+            bottom := NumGet(itemRc, 12, "Int")
 
             if (i = selIdx) {
                 ; Rounded pill: top corners round, bottom corners square.
                 ; Draw full RoundRect, then overdraw bottom 6px with FillRect
                 ; using same brush — squares off the bottom corner curves.
-                tabBrush := DarkTheme.GetSolidBrush(DarkTheme.Colors["ControlsHover"])  ; cached — do not delete
+                tabBrush := DllCall("CreateSolidBrush", "UInt",
+                    DarkTheme.RGBtoBGR(DarkTheme.Colors["ControlsHover"]), "Ptr")
                 oPen   := DllCall("SelectObject", "Ptr", hdc, "Ptr", hNullPen, "Ptr")
                 oBrush := DllCall("SelectObject", "Ptr", hdc, "Ptr", tabBrush, "Ptr")
                 DllCall("RoundRect", "Ptr", hdc,
                     "Int", left+2, "Int", top, "Int", right-1, "Int", bottom+1,
-                    "Int", 6, "Int", 6, "Void")
-                squareRc := DM_RECT()
-                squareRc.left := left+2,  squareRc.top := bottom-6
-                squareRc.right := right-1, squareRc.bottom := bottom+1
-                DllCall("FillRect", "Ptr", hdc, "Ptr", squareRc, "Ptr", tabBrush, "Void")
-                DllCall("SelectObject", "Ptr", hdc, "Ptr", oPen, "Void")
-                DllCall("SelectObject", "Ptr", hdc, "Ptr", oBrush, "Void")
+                    "Int", 6, "Int", 6)
+                squareRc := Buffer(16)
+                NumPut("Int", left+2,    squareRc,  0)
+                NumPut("Int", bottom-6,  squareRc,  4)
+                NumPut("Int", right-1,   squareRc,  8)
+                NumPut("Int", bottom+1,  squareRc, 12)
+                DllCall("FillRect", "Ptr", hdc, "Ptr", squareRc, "Ptr", tabBrush)
+                DllCall("SelectObject", "Ptr", hdc, "Ptr", oPen)
+                DllCall("SelectObject", "Ptr", hdc, "Ptr", oBrush)
+                DllCall("DeleteObject", "Ptr", tabBrush)
                 DllCall("SetTextColor", "Ptr", hdc, "UInt",
-                    DarkTheme.RGBtoBGR(DarkTheme.Colors["Font"]), "Void")
+                    DarkTheme.RGBtoBGR(DarkTheme.Colors["Font"]))
             } else {
                 DllCall("SetTextColor", "Ptr", hdc, "UInt",
-                    DarkTheme.RGBtoBGR(DarkTheme.Colors["FontDim"]), "Void")
+                    DarkTheme.RGBtoBGR(DarkTheme.Colors["FontDim"]))
             }
 
             ; Fetch label text via TCM_GETITEMW and draw centered
             textBuf := Buffer(512, 0)
-            tcItem  := DM_TCITEMW()
-            tcItem.mask       := TCIF_TEXT
-            tcItem.pszText    := textBuf.Ptr
-            tcItem.cchTextMax := 255
-            DllCall("SendMessage", "Ptr", hwnd, "UInt", TCM_GETITEM, "Ptr", i, "Ptr", tcItem.Ptr)
+            tcItem  := Buffer(tcItemSz, 0)
+            NumPut("UInt", TCIF_TEXT,   tcItem, 0)
+            NumPut("Ptr",  textBuf.Ptr, tcItem, pszTextOff)
+            NumPut("Int",  255,         tcItem, cchMaxOff)
+            DllCall("SendMessage", "Ptr", hwnd, "UInt", TCM_GETITEM, "Ptr", i, "Ptr", tcItem)
             tabText := StrGet(textBuf)
-            DllCall("DrawTextW", "Ptr", hdc, "Str", tabText, "Int", -1, "Ptr", itemRc,
-                "UInt", DT_CENTER | DT_VCENTER | DT_SINGLELINE, "Void")
+            DllCall("DrawText", "Ptr", hdc, "Str", tabText, "Int", -1, "Ptr", itemRc,
+                "UInt", DT_CENTER | DT_VCENTER | DT_SINGLELINE)
         }
 
         ; 1px separator line between tab strip and content area
         if tabStripBottom > 0 {
-            sepRc := DM_RECT()
-            sepRc.left := 0, sepRc.top := tabStripBottom - 1, sepRc.right := w, sepRc.bottom := tabStripBottom
-            DllCall("FillRect", "Ptr", hdc, "Ptr", sepRc, "Ptr", DarkTheme.GetBrush("Border"), "Void")
+            sepRc := Buffer(16)
+            NumPut("Int", 0, "Int", tabStripBottom - 1, "Int", w, "Int", tabStripBottom, sepRc)
+            DllCall("FillRect", "Ptr", hdc, "Ptr", sepRc, "Ptr", DarkTheme.GetBrush("Border"))
         }
 
         if oldFont
-            DllCall("SelectObject", "Ptr", hdc, "Ptr", oldFont, "Void")
+            DllCall("SelectObject", "Ptr", hdc, "Ptr", oldFont)
     }
 }
 
@@ -3308,8 +2850,6 @@ class DarkWindowProc {
     static MenuBarControls := Map()
     /** @type {Map} ComboBox dropdown list handles for WM_CTLCOLORLISTBOX */
     static ComboDropdowns := Map()
-    /** @type {Map} SysLink control handles whose link segments get recolored via NM_CUSTOMDRAW */
-    static LinkControls := Map()
 
     /**
      * Installs dark window procedure on a window.
@@ -3343,9 +2883,6 @@ class DarkWindowProc {
         static WM_CTLCOLORLISTBOX := 0x0134
         static WM_CTLCOLORBTN := 0x0135
         static WM_CTLCOLORSTATIC := 0x0138
-        static WM_DRAWITEM := 0x002B
-        static WM_NOTIFY := 0x004E
-        static NM_CUSTOMDRAW := -12
         static TRANSPARENT := 1
 
         if hwnd != targetHwnd
@@ -3397,23 +2934,6 @@ class DarkWindowProc {
                 DllCall("gdi32\SetBkColor", "Ptr", wParam, "UInt", DarkTheme.RGBtoBGR(DarkTheme.Colors["Background"]))
                 DllCall("gdi32\SetBkMode", "Ptr", wParam, "Int", TRANSPARENT)
                 return DarkTheme.GetBrush("Background")
-
-            case WM_DRAWITEM:
-                ; Owner-drawn dark status bar parts (no SB text-color message exists).
-                dis := DM_DRAWITEMSTRUCT.At(lParam)
-                if _DarkStatusBar.Texts.Has(dis.hwndItem) {
-                    _DarkStatusBar.DrawPart(dis)
-                    return 1
-                }
-
-            case WM_NOTIFY:
-                ; Recolor SysLink link segments via NM_CUSTOMDRAW; clicks fall through
-                ; to AHK so OnEvent("Click") still fires.
-                if this.LinkControls.Count {
-                    nm := DM_NMHDR.At(lParam)
-                    if this.LinkControls.Has(nm.hwndFrom) && nm.code = NM_CUSTOMDRAW
-                        return _DarkLink.OnCustomDraw(lParam)
-                }
         }
 
         return Subclass.CallOriginal(this.OldProcs[targetHwnd], hwnd, msg, wParam, lParam)
@@ -3439,7 +2959,7 @@ class _DarkMenuBuilder {
      */
     Item(text, id, shortcut := "") {
         itemText := shortcut ? text "`t" shortcut : text
-        DllCall("AppendMenuW", "Ptr", this.hPopup, "UInt", 0x0000, "Ptr", id, "Str", itemText, "Void")
+        DllCall("AppendMenu", "Ptr", this.hPopup, "UInt", 0x0000, "Ptr", id, "Str", itemText)
         return this
     }
 
@@ -3448,7 +2968,7 @@ class _DarkMenuBuilder {
      * @returns {_DarkMenuBuilder} this (chainable)
      */
     Sep() {
-        DllCall("AppendMenuW", "Ptr", this.hPopup, "UInt", 0x0800, "Ptr", 0, "Ptr", 0, "Void")
+        DllCall("AppendMenu", "Ptr", this.hPopup, "UInt", 0x0800, "Ptr", 0, "Ptr", 0)
         return this
     }
 }
@@ -3484,26 +3004,26 @@ class DarkMenuBar {
         this.hoveredMenu := ""
 
         this.layout := Map(
-            "menuBarHeight", options.Get("menuBarHeight", 24),
-            "toolbarHeight", options.Get("toolbarHeight", 32),
-            "menuItemPadding", options.Get("menuItemPadding", 12),
-            "menuFontSize", options.Get("menuFontSize", 9),
-            "toolbarIconSize", options.Get("toolbarIconSize", 20),
-            "toolbarButtonSpacing", options.Get("toolbarButtonSpacing", 4),
-            "toolbarSeparatorWidth", options.Get("toolbarSeparatorWidth", 1),
-            "showToolbar", options.Get("showToolbar", true),
-            "popupOffsetX", options.Get("popupOffsetX", 0),
-            "popupOffsetY", options.Get("popupOffsetY", 0)
+            "menuBarHeight", options.Has("menuBarHeight") ? options["menuBarHeight"] : 24,
+            "toolbarHeight", options.Has("toolbarHeight") ? options["toolbarHeight"] : 32,
+            "menuItemPadding", options.Has("menuItemPadding") ? options["menuItemPadding"] : 12,
+            "menuFontSize", options.Has("menuFontSize") ? options["menuFontSize"] : 9,
+            "toolbarIconSize", options.Has("toolbarIconSize") ? options["toolbarIconSize"] : 20,
+            "toolbarButtonSpacing", options.Has("toolbarButtonSpacing") ? options["toolbarButtonSpacing"] : 4,
+            "toolbarSeparatorWidth", options.Has("toolbarSeparatorWidth") ? options["toolbarSeparatorWidth"] : 1,
+            "showToolbar", options.Has("showToolbar") ? options["showToolbar"] : true,
+            "popupOffsetX", options.Has("popupOffsetX") ? options["popupOffsetX"] : 0,
+            "popupOffsetY", options.Has("popupOffsetY") ? options["popupOffsetY"] : 0
         )
 
         this.colors := Map(
-            "menuBarBg", options.Get("menuBarBg", DarkTheme.Colors["Header"]),
-            "menuBarText", options.Get("menuBarText", DarkTheme.Colors["Font"]),
-            "menuBarHover", options.Get("menuBarHover", DarkTheme.Colors["ControlsActive"]),
-            "menuBarActive", options.Get("menuBarActive", DarkTheme.Colors["Accent"]),
-            "popupBg", options.Get("popupBg", DarkTheme.Colors["Header"]),
-            "toolbarBg", options.Get("toolbarBg", DarkTheme.Colors["Header"]),
-            "toolbarBorder", options.Get("toolbarBorder", DarkTheme.Colors["Border"])
+            "menuBarBg", options.Has("menuBarBg") ? options["menuBarBg"] : DarkTheme.Colors["Header"],
+            "menuBarText", options.Has("menuBarText") ? options["menuBarText"] : DarkTheme.Colors["Font"],
+            "menuBarHover", options.Has("menuBarHover") ? options["menuBarHover"] : DarkTheme.Colors["ControlsActive"],
+            "menuBarActive", options.Has("menuBarActive") ? options["menuBarActive"] : DarkTheme.Colors["Accent"],
+            "popupBg", options.Has("popupBg") ? options["popupBg"] : DarkTheme.Colors["Header"],
+            "toolbarBg", options.Has("toolbarBg") ? options["toolbarBg"] : DarkTheme.Colors["Header"],
+            "toolbarBorder", options.Has("toolbarBorder") ? options["toolbarBorder"] : DarkTheme.Colors["Border"]
         )
 
         this.totalHeight := this.layout["showToolbar"] ?
@@ -3511,7 +3031,7 @@ class DarkMenuBar {
             this.layout["menuBarHeight"]
 
         DarkMenu.Apply()
-        DarkTheme.AllowDarkMode(this.gui.Hwnd, true)
+        this._AllowDarkModeForWindow()
         this.CreateMenuBar()
         if this.layout["showToolbar"] {
             this.CreateToolbar()
@@ -3520,23 +3040,6 @@ class DarkMenuBar {
         this._onMouseMove := this.OnMouseMove.Bind(this)
         OnMessage(0x200, this._onMouseMove)
         this._lastHoveredBtn := ""
-
-        ; Menu/toolbar bars are added at a fixed width; stretch them to the
-        ; client width whenever the parent (e.g. +Resize) window changes size.
-        this._onParentSize := this.OnParentSize.Bind(this)
-        this.gui.OnEvent("Size", this._onParentSize)
-    }
-
-    /** Stretches the menu bar, toolbar, and toolbar border to the client width. */
-    OnParentSize(guiObj, minMax, width, height) {
-        if minMax = -1  ; minimized
-            return
-        if this.HasProp("menuBar")
-            this.menuBar.Move(, , width)
-        if this.HasProp("toolbar") {
-            this.toolbar.Move(, , width)
-            this.toolbarBorder.Move(, , width)
-        }
     }
 
     CreateMenuBar() {
@@ -3575,14 +3078,11 @@ class DarkMenuBar {
         hPopup := DllCall("CreatePopupMenu", "Ptr")
         this.ApplyDarkThemeToPopup(hPopup)
 
-        ; Center label vertically using SS_CENTERIMAGE (0x200). Create it at a
-        ; placeholder width, set the font, then size to the *measured* text so
-        ; the label fits any font size / non-ASCII name — the old StrLen*7 guess
-        ; clipped wide glyphs and over-padded narrow ones.
-        menuLabel := this.gui.AddText("x" . this.menuBarStartX . " y0 w10 h" . this.layout["menuBarHeight"] . " +0x200 Center BackgroundTrans c" . Format("{:06X}", this.colors["menuBarText"]), menuName)
+        itemWidth := StrLen(menuName) * 7 + this.layout["menuItemPadding"]
+
+        ; Center label vertically in menu bar using SS_CENTERIMAGE (0x200)
+        menuLabel := this.gui.AddText("x" . this.menuBarStartX . " y0 w" . itemWidth . " h" . this.layout["menuBarHeight"] . " +0x200 Center BackgroundTrans c" . Format("{:06X}", this.colors["menuBarText"]), menuName)
         menuLabel.SetFont("s" . this.layout["menuFontSize"], "Segoe UI")
-        itemWidth := this._MeasureLabelWidth(menuLabel, menuName) + this.layout["menuItemPadding"]
-        menuLabel.Move(, , itemWidth)
 
         hitArea := this.gui.AddText("x" . this.menuBarStartX . " y0 w" . itemWidth . " h" . this.layout["menuBarHeight"] . " BackgroundTrans")
         hitArea.OnEvent("Click", this.ShowPopupMenu.Bind(this, hPopup, this.menuBarStartX))
@@ -3668,11 +3168,11 @@ class DarkMenuBar {
 
         for item in this.menuItems {
             if item["popup"] = hPopup {
-                ctrlRect := DM_RECT()
+                ctrlRect := Buffer(16, 0)
                 DllCall("GetWindowRect", "Ptr", item["hitArea"].Hwnd, "Ptr", ctrlRect)
 
-                popupX := ctrlRect.left   ; Left
-                popupY := ctrlRect.bottom  ; Bottom
+                popupX := NumGet(ctrlRect, 0, "Int")   ; Left
+                popupY := NumGet(ctrlRect, 12, "Int")  ; Bottom
 
                 item["label"].Opt("Background" . Format("{:06X}", this.colors["menuBarActive"]))
                 labelRef := item["label"]
@@ -3758,32 +3258,27 @@ class DarkMenuBar {
         this.hoveredMenu := ""
     }
 
-    /**
-     * Measures a label's pixel width using the control's own selected font.
-     * @param {Gui.Text} ctrl - The label control (font already applied).
-     * @param {String} text - Text to measure.
-     * @returns {Integer} Width in pixels.
-     */
-    _MeasureLabelWidth(ctrl, text) {
-        hdc := DllCall("GetDC", "Ptr", ctrl.Hwnd, "Ptr")
-        hFont := SendMessage(0x31, 0, 0, ctrl)  ; WM_GETFONT
-        old := hFont ? DllCall("SelectObject", "Ptr", hdc, "Ptr", hFont, "Ptr") : 0
-        sz := DM_SIZE()
-        DllCall("GetTextExtentPoint32W", "Ptr", hdc, "Str", text, "Int", StrLen(text), "Ptr", sz.Ptr)
-        if old
-            DllCall("SelectObject", "Ptr", hdc, "Ptr", old, "Void")
-        DllCall("ReleaseDC", "Ptr", ctrl.Hwnd, "Ptr", hdc, "Void")
-        return sz.cx
-    }
-
     ApplyDarkThemeToPopup(hPopup) {
         darkBrush := DllCall("CreateSolidBrush", "UInt", DarkTheme.RGBtoBGR(this.colors["popupBg"]), "Ptr")
 
-        mi := DM_MENUINFO()
-        mi.cbSize  := mi.Size
-        mi.fMask   := 0x10  ; MIM_BACKGROUND
-        mi.hbrBack := darkBrush
-        DllCall("SetMenuInfo", "Ptr", hPopup, "Ptr", mi.Ptr, "Void")
+        mi := Buffer(28, 0)
+        NumPut("UInt", mi.Size, mi, 0)
+        NumPut("UInt", 0x10, mi, 4)
+        NumPut("Ptr", darkBrush, mi, 16)
+        DllCall("SetMenuInfo", "Ptr", hPopup, "Ptr", mi)
+    }
+
+    _AllowDarkModeForWindow() {
+        try {
+            uxtheme := DllCall("GetModuleHandle", "Str", "uxtheme", "Ptr")
+            if !uxtheme
+                uxtheme := DllCall("LoadLibrary", "Str", "uxtheme", "Ptr")
+            if uxtheme {
+                fn := DllCall("GetProcAddress", "Ptr", uxtheme, "Ptr", 133, "Ptr")
+                if fn
+                    DllCall(fn, "Ptr", this.gui.Hwnd, "Int", 1)
+            }
+        }
     }
 
     /**
@@ -3792,10 +3287,9 @@ class DarkMenuBar {
      */
     Destroy() {
         OnMessage(0x200, this._onMouseMove, 0)
-        try this.gui.OnEvent("Size", this._onParentSize, 0)
         for item in this.menuItems {
             if item.Has("popup")
-                DllCall("DestroyMenu", "Ptr", item["popup"], "Void")
+                DllCall("DestroyMenu", "Ptr", item["popup"])
         }
     }
 
@@ -3817,8 +3311,6 @@ class DarkMenuBar {
 class DarkGui extends Gui {
     /** @type {Map} Tracks dark-styled controls: hwnd -> controlType */
     _darkHwnds := Map()
-    /** @type {Integer} HWND cached at construction for safe teardown */
-    _hwnd := 0
 
     /**
      * Creates a new dark-themed GUI window.
@@ -3827,12 +3319,7 @@ class DarkGui extends Gui {
      */
     __New(options := "", title := A_ScriptName) {
         super.__New(options, title)
-        ; Cache the HWND: Gui.Prototype.Hwnd throws "Gui has no window" once the
-        ; window is destroyed, which can occur before __Delete runs at app exit.
-        ; Teardown bookkeeping uses this cached value instead of the getter.
-        this._hwnd := this.Hwnd
         DarkTheme.AddRef()
-        DarkTheme.Windows[this._hwnd] := true
         this.BackColor := DarkTheme.Colors["Background"]
         this.SetFont("s9", "Segoe UI")
         DarkTitleBar.Apply(this.Hwnd)
@@ -3864,12 +3351,8 @@ class DarkGui extends Gui {
                 case "Button":   _DarkButton.Remove(hwnd)
                 case "ComboBox": _DarkComboBox.Remove(hwnd)
                 case "Slider":   _DarkSlider.Remove(hwnd)
-                case "GroupBox":  _DarkGroupBox.Remove(hwnd)
-                case "Tab3":      _DarkTab.Remove(hwnd)
-                case "UpDown":    _DarkUpDown.Remove(hwnd)
-                case "StatusBar": _DarkStatusBar.Remove(hwnd)
-                case "Link":      _DarkLink.Remove(hwnd)
-                case "MonthCal":  _DarkMonthCal.Remove(hwnd)
+                case "GroupBox": _DarkGroupBox.Remove(hwnd)
+                case "Tab3":     _DarkTab.Remove(hwnd)
             }
         }
         this._darkHwnds.Clear()
@@ -3884,8 +3367,7 @@ class DarkGui extends Gui {
                 map.Delete(hwnd)
         }
 
-        DarkTheme.Windows.Delete(this._hwnd)
-        try DarkWindowProc.Uninstall(this._hwnd)
+        try DarkWindowProc.Uninstall(this.Hwnd)
         DarkTheme.Release()
     }
 
@@ -3943,10 +3425,10 @@ class DarkGui extends Gui {
                 DarkTheme.RemoveBorder(ctrl.Hwnd)
                 ; Dark the dropdown list portion
                 static CB_GETCOMBOBOXINFO := 0x0164
-                cbi := DM_COMBOBOXINFO()
-                cbi.cbSize := cbi.Size
-                if DllCall("SendMessage", "Ptr", ctrl.Hwnd, "UInt", CB_GETCOMBOBOXINFO, "Ptr", 0, "Ptr", cbi.Ptr) {
-                    listHwnd := cbi.hwndList
+                cbi := Buffer(A_PtrSize = 8 ? 64 : 52, 0)
+                NumPut("UInt", cbi.Size, cbi, 0)
+                if DllCall("SendMessage", "Ptr", ctrl.Hwnd, "UInt", CB_GETCOMBOBOXINFO, "Ptr", 0, "Ptr", cbi) {
+                    listHwnd := NumGet(cbi, A_PtrSize = 8 ? 56 : 44, "Ptr")
                     if listHwnd {
                         DllCall("uxtheme\SetWindowTheme", "Ptr", listHwnd, "Str", "DarkMode_Explorer", "Ptr", 0)
                         DarkWindowProc.ComboDropdowns[listHwnd] := true
@@ -3956,7 +3438,8 @@ class DarkGui extends Gui {
 
             case "ComboBox":
                 ctrl := super.Add(controlType, options, content?)
-                ctrl.SetDarkMode()  ; _DarkComboBox.ApplyDarkMode already calls RemoveBorder
+                ctrl.SetDarkMode()
+                DarkTheme.RemoveBorder(ctrl.Hwnd)
                 this._darkHwnds[ctrl.Hwnd] := controlType
                 return ctrl
 
@@ -3979,36 +3462,6 @@ class DarkGui extends Gui {
                 this._darkHwnds[ctrl.Hwnd] := "Tab3"
                 return ctrl
 
-            case "UpDown":
-                ctrl := super.Add(controlType, options, content?)
-                _DarkUpDown.ApplyDarkMode(ctrl)
-                this._darkHwnds[ctrl.Hwnd] := "UpDown"
-                return ctrl
-
-            case "StatusBar":
-                ctrl := super.Add(controlType, options, content?)
-                _DarkStatusBar.ApplyDarkMode(ctrl)
-                ; Re-apply creation text through the owner-draw path so it renders dark
-                if IsSet(content) && content != ""
-                    ctrl.SetText(content)
-                this._darkHwnds[ctrl.Hwnd] := "StatusBar"
-                return ctrl
-
-            case "Link":
-                ; cWhite default so the surrounding (non-link) text is readable
-                if !RegExMatch(options, "i)\bc[0-9A-Fa-f]+\b|\bcWhite\b|\bcBlack\b")
-                    options .= " cWhite"
-                ctrl := super.Add(controlType, options, content?)
-                _DarkLink.ApplyDarkMode(ctrl)
-                this._darkHwnds[ctrl.Hwnd] := "Link"
-                return ctrl
-
-            case "MonthCal":
-                ctrl := super.Add(controlType, options, content?)
-                _DarkMonthCal.ApplyDarkMode(ctrl)
-                this._darkHwnds[ctrl.Hwnd] := "MonthCal"
-                return ctrl
-
             default:
                 return super.Add(controlType, options, content?)
         }
@@ -4017,7 +3470,7 @@ class DarkGui extends Gui {
     /** Manually selects a radio and unchecks all others in its group */
     static _SelectRadio(selected, group) {
         for r in group
-            r.Value := (r = selected)
+            r.Value := (r = selected) ? 1 : 0
     }
 
     /** Internal: Adds Radio with separate text control for proper dark styling */
@@ -4044,7 +3497,7 @@ class DarkGui extends Gui {
 
         static SWP_NOSIZE := 0x1, SWP_NOMOVE := 0x2, SWP_NOACTIVATE := 0x10
         DllCall("SetWindowPos", "Ptr", txt.Hwnd, "Ptr", 0, "Int", 0, "Int", 0, "Int", 0, "Int", 0,
-            "UInt", SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE | 0x40, "Void")
+            "UInt", SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE | 0x40)
 
         DllCall("uxtheme\SetWindowTheme", "Ptr", radio.Hwnd, "Str", "DarkMode_Explorer", "Ptr", 0)
 
@@ -4062,23 +3515,15 @@ class DarkGui extends Gui {
     }
 }
 
-/**
- * Backward-compatibility alias — `_Dark(...)` constructs a {@link DarkGui}.
- * Declared as an (empty) subclass rather than a `_Dark := DarkGui` global
- * assignment so that merely including this file has no auto-execute side effect.
- */
-class _Dark extends DarkGui {
-}
+/** @type {DarkGui} Backward compatibility alias — `_Dark` resolves to {@link DarkGui}. */
+_Dark := DarkGui
 
-; Run standalone showcase when executed directly, skip when #Included as library.
-; Held in a script-lifetime variable so the instance isn't reliant on OnMessage
-; bindings to stay alive.
+; Run standalone showcase when executed directly, skip when #Included as library
 if A_LineFile = A_ScriptFullPath
-    _darkShowcase := DarkModeShowcase()
+    DarkModeShowcase()
 
 class DarkModeShowcase {
     controls := Map()
-    _altTheme := false
 
     static CMD_NEW := 101, CMD_OPEN := 102, CMD_SAVE := 103, CMD_EXIT := 104
     static CMD_UNDO := 201, CMD_CUT := 202, CMD_COPY := 203, CMD_PASTE := 204
@@ -4089,7 +3534,7 @@ class DarkModeShowcase {
         this.BuildMenuBar()
         this.BuildLayout()
         this.BindEvents()
-        this.gui.Show("w620 h558")
+        this.gui.Show("w620 h560")
     }
 
     BuildMenuBar() {
@@ -4127,13 +3572,6 @@ class DarkModeShowcase {
         switch cmdId {
             case DarkModeShowcase.CMD_EXIT:  ExitApp()
             case DarkModeShowcase.CMD_ABOUT: MsgBox("DarkModeModular.ahk Showcase`nAll controls dark-themed automatically.", "About")
-            case DarkModeShowcase.CMD_THEME:
-                ; Live re-theme: SetColor recreates the cached brush and repaints
-                ; every registered DarkGui window via DarkTheme.Redraw.
-                this._altTheme := !this._altTheme
-                DarkTheme.SetColor("Accent", this._altTheme ? 0xA855F7 : 0x0078D7)
-                if this.controls.Has("status")
-                    this.controls["status"].Text := "Status: Accent → " (this._altTheme ? "Purple" : "Blue")
             default:
                 if this.controls.Has("status")
                     this.controls["status"].Text := "Status: Menu command " cmdId " at " FormatTime(, "HH:mm:ss")
@@ -4198,14 +3636,7 @@ class DarkModeShowcase {
         p2 := this.controls["tv"].Add("Images")
         this.controls["tv"].Add("Photo.jpg", p2)
 
-        ; Spinner (numeric Edit + UpDown) and SysLink, then a real docked StatusBar.
-        this.gui.Add("Text", "x20 y" (y0 + 482) " w40 +0x200", "Spin:")
-        this.controls["spinEdit"] := this.gui.Add("Edit", "x60 y" (y0 + 478) " w52 h24 +Number", "10")
-        this.controls["spin"] := this.gui.Add("UpDown", "Range0-100", 10)
-        this.controls["link"] := this.gui.Add("Link", "x130 y" (y0 + 482) " w460",
-            'Docs: <a href="https://www.autohotkey.com/docs/">AutoHotkey</a> · <a href="https://github.com/">GitHub</a>')
-
-        this.controls["status"] := this.gui.Add("StatusBar", , "Status: Ready")
+        this.controls["status"] := this.gui.Add("Text", "x20 y" (y0 + 480) " w580", "Status: Ready")
     }
 
     BindEvents() {
@@ -4217,8 +3648,6 @@ class DarkModeShowcase {
         this.controls["btnFlat"].OnEvent("Click", (*) => this.controls["status"].Text := "Status: Flat clicked")
         this.controls["btnIcon"].OnEvent("Click", (*) => this.controls["status"].Text := "Status: Icon clicked")
         this.controls["btnSplit"].OnEvent("Click", (*) => this.controls["status"].Text := "Status: Split (face) clicked")
-        this.controls["spin"].OnEvent("Change", (*) => this.controls["status"].Text := "Status: Spin = " this.controls["spinEdit"].Value)
-        this.controls["link"].OnEvent("Click", this.OnLink.Bind(this))
         this.gui.OnEvent("Close", (*) => (ExitApp(), 0))
     }
 
@@ -4242,13 +3671,5 @@ class DarkModeShowcase {
         sliderVal := this.controls["slider"].Value
         this.controls["progress"].Value := sliderVal
         this.controls["sliderLabel"].Text := "Value: " sliderVal
-    }
-
-    ; Link Click fires with (ctrl, info, href). Registering a callback suppresses
-    ; AHK's automatic HREF launch, so open it ourselves.
-    OnLink(ctrl, info, href := "") {
-        if href
-            Run(href)
-        this.controls["status"].Text := "Status: Link → " href
     }
 }
