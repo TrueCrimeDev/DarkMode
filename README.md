@@ -82,4 +82,4 @@ The Blue preset carries the accent hue into every surface — background, contro
 
 ![Fable showcase, Blue preset](screenshots/DarkModeModular_Fable_Blue.png)
 
-Screenshots are captured with `tools/capture.ps1`, which launches a showcase, finds its window by process ID, and saves the DWM frame bounds to PNG.
+Screenshots are produced with `tools/compose.ps1`, which renders the target window off-screen via `PrintWindow`, then composites it onto the Windows 11 Bloom wallpaper with rounded corners and a drop shadow — no clean desktop required. `tools/capture.ps1` is the simpler live-screen variant.
