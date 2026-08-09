@@ -36,6 +36,26 @@ Public API: `DarkGui`, `DarkTheme`, `DarkTitleBar`, `DarkMenu`, `DarkMenuBar`.
 
 ## Screenshots
 
-![Dark Mode GUI Example 1](screenshot1.png)
+Each library ships with a built-in showcase — run the file directly (instead of `#Include`-ing it) to open a window exercising every supported control.
 
-![Dark Mode GUI Example 2](screenshot2.png)
+### Classic (`DarkModeModular.ahk`)
+
+![Classic showcase](screenshots/DarkModeModular_Classic.png)
+
+### Alpha port (`DarkModeModular_Alpha.ahk`)
+
+![Alpha showcase](screenshots/DarkModeModular_Alpha.png)
+
+### Fable revision (`DarkModeModular_Fable.ahk`)
+
+Default palette, with DateTime, Hotkey, Tab3, checkbox TreeView, and MonthCal coverage:
+
+![Fable showcase, Default palette](screenshots/DarkModeModular_Fable_Default.png)
+
+Live palette swap via `DarkTheme.SetPalette()` — OLED and Slate presets applied from the View menu:
+
+![Fable showcase, OLED preset](screenshots/DarkModeModular_Fable_OLED.png)
+
+![Fable showcase, Slate preset](screenshots/DarkModeModular_Fable_Slate.png)
+
+Screenshots are captured with `tools/capture.ps1`, which launches a showcase, finds its window by process ID, and saves the DWM frame bounds to PNG.
