@@ -338,6 +338,29 @@ class DarkTheme {
         slate["Selection"] := 0x2C4A6E
         this.Presets["Slate"] := slate
 
+        ; Deep-navy palette — the accent hue carried into every surface, not
+        ; just buttons and selection, for windows that should read as "blue".
+        blue := this.Colors.Clone()
+        blue["Background"] := 0x0D1B2E
+        blue["Controls"] := 0x16283F
+        blue["ControlsHover"] := 0x1E3450
+        blue["ControlsActive"] := 0x264060
+        blue["Header"] := 0x142438
+        blue["GridLine"] := 0x1A2C44
+        blue["Border"] := 0x2E4A6E
+        blue["ButtonHover"] := 0x1C3350
+        blue["ButtonPressed"] := 0x0F2038
+        blue["ButtonBorder"] := 0x35557E
+        blue["FlatPressed"] := 0x122238
+        blue["DisabledBg"] := 0x112034
+        blue["Selection"] := 0x1F4E79
+        blue["FontDim"] := 0x9FB6D1
+        blue["ScrollTrack"] := 0x122238
+        blue["ScrollThumb"] := 0x33507A
+        blue["ScrollThumbHover"] := 0x466A9E
+        blue["CalendarTrailing"] := 0x3E5A80
+        this.Presets["Blue"] := blue
+
         ; Light counterpart for FollowSystem consumers:
         ;   DarkTheme.FollowSystem(l => DarkTheme.ApplyPreset(l ? "Light" : "Default"))
         ; SetPalette syncs the DWM immersive-dark flag and frame colors per window,
@@ -524,7 +547,7 @@ class DarkTheme {
         this.Redraw()
     }
 
-    /** @type {Map} Named full palettes built in __New: "Default", "OLED", "Slate" */
+    /** @type {Map} Named full palettes built in __New: "Default", "OLED", "Slate", "Blue", "Light" */
     static Presets := Map()
 
     /**
@@ -5952,6 +5975,7 @@ class DarkModeShowcase {
     static CMD_THEME := 301, CMD_ABOUT := 302
     static CMD_PRESET_DEFAULT := 311, CMD_PRESET_OLED := 312
     static CMD_PRESET_SLATE := 313, CMD_PRESET_LIGHT := 314
+    static CMD_PRESET_BLUE := 315
 
     __New() {
         this.gui := DarkGui("+Resize", "Modular Dark Mode System")
@@ -5987,6 +6011,7 @@ class DarkModeShowcase {
         viewMenu.Item("Preset: Default", DarkModeShowcase.CMD_PRESET_DEFAULT)
         viewMenu.Item("Preset: OLED",    DarkModeShowcase.CMD_PRESET_OLED)
         viewMenu.Item("Preset: Slate",   DarkModeShowcase.CMD_PRESET_SLATE)
+        viewMenu.Item("Preset: Blue",    DarkModeShowcase.CMD_PRESET_BLUE)
         viewMenu.Item("Preset: Light",   DarkModeShowcase.CMD_PRESET_LIGHT)
         viewMenu.Sep()
         viewMenu.Item("About...",        DarkModeShowcase.CMD_ABOUT)
@@ -6013,6 +6038,7 @@ class DarkModeShowcase {
             case DarkModeShowcase.CMD_PRESET_DEFAULT: this.ApplyPreset("Default")
             case DarkModeShowcase.CMD_PRESET_OLED:    this.ApplyPreset("OLED")
             case DarkModeShowcase.CMD_PRESET_SLATE:   this.ApplyPreset("Slate")
+            case DarkModeShowcase.CMD_PRESET_BLUE:    this.ApplyPreset("Blue")
             case DarkModeShowcase.CMD_PRESET_LIGHT:   this.ApplyPreset("Light")
             default:
                 if this.controls.Has("status")

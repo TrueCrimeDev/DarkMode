@@ -26,9 +26,29 @@ Three generations of the framework, newest last. Pick the one matching your inte
 - **Coverage** — DateTime, Hotkey, Tab/Tab2/Tab3, TreeView checkboxes, dark tooltips (`DarkToolTip`), dark Edit caret, generalized scrollbars.
 - **Correctness** — `WM_SETTEXT` keeps Button/GroupBox captions in sync; native `AddButton`/`AddEdit`/... shorthands route through dark styling; menu-bar tooltips actually display; `MIM_BACKGROUND` uses the cached brush (no leak); radios expose their text to UIA.
 - **Architecture** — handler registry (`DarkGui.Register`) so user control classes plug in without editing `Add()`; `DarkGui.Attach()` retrofits an existing plain `Gui`; subclassing via comctl32 `SetWindowSubclass`.
-- **Theming** — `DarkTheme.SetPalette()` with presets (Default/OLED/Slate/Light) plus `OnThemeChanged` callbacks; palette swaps re-sync DWM title-bar colors and `Gui.BackColor` per window; `DarkTheme.FollowSystem()` tracks the OS light/dark setting; per-monitor DPI scaling via `GetDpiForWindow` with `WM_DPICHANGED` handling and a `DarkGui.OnDpiChanged()` hook.
+- **Theming** — `DarkTheme.SetPalette()` with presets (Default/OLED/Slate/Blue/Light) plus `OnThemeChanged` callbacks; palette swaps re-sync DWM title-bar colors and `Gui.BackColor` per window; `DarkTheme.FollowSystem()` tracks the OS light/dark setting; per-monitor DPI scaling via `GetDpiForWindow` with `WM_DPICHANGED` handling and a `DarkGui.OnDpiChanged()` hook.
 
 Public API: `DarkGui`, `DarkTheme`, `DarkTitleBar`, `DarkMenu`, `DarkMenuBar`.
+
+## Built with this system
+
+Real GUIs from the wider script collection, each just `#Include`-ing one of the `DarkModeModular*` files:
+
+Win11 chrome demo — live Mica/Acrylic backdrop and caption-color toggles on a DarkGui window:
+
+![Win11 chrome demo](screenshots/App_Win11Chrome.png)
+
+Responsive layout engine settings dialog — anchored controls reflow on resize:
+
+![GuiLayout demo](screenshots/App_GuiLayout.png)
+
+Advanced button styles — icon, split/dropdown, command-link, toggle, and flat buttons:
+
+![Advanced buttons demo](screenshots/App_AdvancedButtons.png)
+
+Search bar with embedded button and live-filtered list:
+
+![Embedded search demo](screenshots/App_SearchBar.png)
 
 ## Legacy experiments
 
@@ -57,5 +77,9 @@ Live palette swap via `DarkTheme.SetPalette()` — OLED and Slate presets applie
 ![Fable showcase, OLED preset](screenshots/DarkModeModular_Fable_OLED.png)
 
 ![Fable showcase, Slate preset](screenshots/DarkModeModular_Fable_Slate.png)
+
+The Blue preset carries the accent hue into every surface — background, controls, borders, scrollbars — for windows that should read as blue rather than gray:
+
+![Fable showcase, Blue preset](screenshots/DarkModeModular_Fable_Blue.png)
 
 Screenshots are captured with `tools/capture.ps1`, which launches a showcase, finds its window by process ID, and saves the DWM frame bounds to PNG.
