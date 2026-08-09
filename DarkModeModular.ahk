@@ -1395,7 +1395,7 @@ class _DarkButton extends Gui.Button {
             DllCall("DestroyIcon", "Ptr", this.Icons[hwnd])
         for prop in [this.ButtonTexts, this.HoverStates, this.PressedStates, this.Instances, this.ButtonModes,
                      this.Icons, this.IconOwned, this.IconAligns, this.Menus, this.OnDropdownCbs,
-                     this.Descriptions, this.ToggleStates, this.HoverArrow, this.FocusStates]
+                     this.Descriptions, this.ToggleStates, this.HoverArrow, this.FocusStates, this.IdleFills]
             if prop.Has(hwnd)
                 prop.Delete(hwnd)
     }
@@ -1504,16 +1504,25 @@ class _DarkButton extends Gui.Button {
         return btn
     }
 
+    /** @type {Map} Optional per-button idle fill color for flat buttons that sit
+     * on a surface other than the Gui background (e.g. embedded in an Edit). */
+    static IdleFills := Map()
+
     /**
      * Adds a flat (borderless) button: no fill at idle, hover/press only.
      * @param {Gui} gui - Parent Gui
      * @param {String} options - Standard Gui.Add options
      * @param {String} text - Button text
+     * @param {Integer} [idleFill] - Idle fill color (0xRRGGBB); defaults to the
+     *   Gui background. Pass DarkTheme.Colors["Controls"] when the button is
+     *   overlaid on an Edit so it blends into the field.
      * @returns {Gui.Button}
      */
-    static AddFlat(gui, options, text) {
+    static AddFlat(gui, options, text, idleFill := -1) {
         btn := gui.Add("Button", options, text)
         this._RegisterWithGui(gui, btn.Hwnd)
+        if idleFill != -1
+            this.IdleFills[btn.Hwnd] := idleFill
         this.ApplyDarkMode(btn, "flat")
         return btn
     }
@@ -2083,7 +2092,12 @@ class _DarkButton extends Gui.Button {
         isHover := this.HoverStates[hwnd]
         isPressed := this.PressedStates[hwnd]
 
-        this._FillParent(hdc, rc)
+        if this.IdleFills.Has(hwnd) {
+            b := DllCall("CreateSolidBrush", "UInt", DarkTheme.RGBtoBGR(this.IdleFills[hwnd]), "Ptr")
+            DllCall("FillRect", "Ptr", hdc, "Ptr", rc, "Ptr", b)
+            DllCall("DeleteObject", "Ptr", b)
+        } else
+            this._FillParent(hdc, rc)
         if isPressed
             this._RoundFill(hdc, 0, 0, w, h, this._Radius, 0x282828)
         else if isHover
