@@ -1,39 +1,38 @@
 # AutoHotkey v2 Dark Mode GUI Class
 
-Working on a single, self-contained dark mode GUI class for AHK v2. The goal is one class that handles all the WinAPI custom drawing without external dependencies.
-
-## What I'm Building
-
-A single `_Dark` class that you can just drop into any AHK v2 script:
+A self-contained dark mode GUI framework for AHK v2. One `#Include`, no external dependencies — `DarkGui()` is a drop-in replacement for `Gui()` that handles all the WinAPI custom drawing for you.
 
 ```autohotkey
-gui := Gui()
-dark := _Dark(gui)
-dark.AddDarkButton("x10 y10", "Button")
-gui.Show()
+#Include DarkModeModular_Fable.ahk
+
+myGui := DarkGui("+Resize", "My App")
+myGui.Add("Button", "+Accent", "OK")
+myGui.Add("Edit", "w300", "text")
+myGui.Show()
 ```
 
-## Current Issues - Need Help
+## Which file do I use?
 
-### 1. Inconsistent Custom Drawing
+Three generations of the framework, newest last. Pick the one matching your interpreter:
 
-Controls randomly load with different styling. Sometimes borders are missing, sometimes background colors don't apply. Same control types behave differently between runs.
+| File | Requires | Status |
+|---|---|---|
+| `DarkModeModular.ahk` | v2.1-alpha.17+ | Classic — for scripts on alpha.17 through alpha.28 |
+| `DarkModeModular_Alpha.ahk` | v2.1-alpha.30 | Typed-Struct port — Win32 structs declared with typed `Struct` + class-ref properties (`IntPtr`, `Int32`, `UInt32`, ...), no hand-rolled offset math |
+| `DarkModeModular_Fable.ahk` | v2.1-alpha.30 | **Current — use this for anything new** |
 
-### 2. Slider Progress Bar Won't Color
+### What the Fable revision adds
 
-The slider track stays Windows default blue. I'm hooking `NM_CUSTOMDRAW` but can't get the progress portion to use my dark colors.
+- **Coverage** — DateTime, Hotkey, Tab/Tab2/Tab3, TreeView checkboxes, dark tooltips (`DarkToolTip`), dark Edit caret, generalized scrollbars.
+- **Correctness** — `WM_SETTEXT` keeps Button/GroupBox captions in sync; native `AddButton`/`AddEdit`/... shorthands route through dark styling; menu-bar tooltips actually display; `MIM_BACKGROUND` uses the cached brush (no leak); radios expose their text to UIA.
+- **Architecture** — handler registry (`DarkGui.Register`) so user control classes plug in without editing `Add()`; `DarkGui.Attach()` retrofits an existing plain `Gui`; subclassing via comctl32 `SetWindowSubclass`.
+- **Theming** — `DarkTheme.SetPalette()` with presets (Default/OLED/Slate/Light) plus `OnThemeChanged` callbacks; palette swaps re-sync DWM title-bar colors and `Gui.BackColor` per window; `DarkTheme.FollowSystem()` tracks the OS light/dark setting; per-monitor DPI scaling via `GetDpiForWindow` with `WM_DPICHANGED` handling and a `DarkGui.OnDpiChanged()` hook.
 
-### 3. Border Rendering Problems  
+Public API: `DarkGui`, `DarkTheme`, `DarkTitleBar`, `DarkMenu`, `DarkMenuBar`.
 
-Some controls lose their borders entirely. Others get partial borders. Can't figure out which `CDDS_*` stages I'm missing or what `CDRF_*` codes to return.
+## Legacy experiments
 
-## Current Approach
-
-Using `OnMessage(0x004E)` to catch `WM_NOTIFY` messages and intercept `NM_CUSTOMDRAW`. Setting colors with `SetBkColor`/`SetTextColor` and returning appropriate `CDRF_*` codes.
-
-The latest version is in `___Darkest.ahk` - run it and you'll see the inconsistent behavior.
-
-If you know WinAPI custom drawing or have dealt with similar issues in AHK, any help would be appreciated.
+`_Dark.ahk`, `_Dark2.ahk`, `__Darkest.ahk`, `___Darkest.ahk`, `Attempt_500.ahk`, `Draft.ahk`, and the `DarkGUI/` folder are earlier iterations kept for reference. They predate the modular rewrite — use the `DarkModeModular*` files instead.
 
 ## Screenshots
 
