@@ -73,10 +73,6 @@ Search bar with an embedded flat button inside the Edit's border and a live-filt
 
 ![Embedded search demo](screenshots/App_SearchBar.png)
 
-## Legacy experiments
-
-`_Dark.ahk`, `_Dark2.ahk`, `__Darkest.ahk`, `___Darkest.ahk`, `Attempt_500.ahk`, `Draft.ahk`, and the `DarkGUI/` folder are earlier iterations kept for reference. They predate the modular rewrite — use `DarkModeModular.ahk` instead.
-
 ## Screenshots
 
 ### Main (`DarkModeModular.ahk`)
