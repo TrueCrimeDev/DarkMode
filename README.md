@@ -3,7 +3,7 @@
 A self-contained dark mode GUI framework for AHK v2. One `#Include`, no external dependencies — `DarkGui()` is a drop-in replacement for `Gui()` that handles all the WinAPI custom drawing for you.
 
 ```autohotkey
-#Include DarkModeModular_Fable.ahk
+#Include DarkModeModular.ahk
 
 myGui := DarkGui("+Resize", "My App")
 myGui.Add("Button", "+Accent", "OK")
@@ -11,28 +11,43 @@ myGui.Add("Edit", "w300", "text")
 myGui.Show()
 ```
 
+Or make every window in a script dark with one line. Every `Gui()` constructed after it — including `class X extends Gui` and windows that other libraries create — is attached with all of its controls:
+
+```autohotkey
+#Include DarkModeModular.ahk
+DarkGui.Global()
+```
+
+`DarkGui.Attach(existingGui)` does the same for a single window you already have.
+
 ## Which file do I use?
 
-Three generations of the framework, newest last. Pick the one matching your interpreter:
-
-| File | Requires | Status |
+| File | Requires | Role |
 |---|---|---|
-| `DarkModeModular.ahk` | v2.1-alpha.17+ | Classic — for scripts on alpha.17 through alpha.28 |
-| `DarkModeModular_Alpha.ahk` | v2.1-alpha.30 | Typed-Struct port — Win32 structs declared with typed `Struct` + class-ref properties (`IntPtr`, `Int32`, `UInt32`, ...), no hand-rolled offset math |
-| `DarkModeModular_Fable.ahk` | v2.1-alpha.30 | **Current — use this for anything new** |
+| `DarkModeModular.ahk` | v2.1-alpha.30 | **Main — use this.** The polished, gated build. |
+| `DarkModeModular_Alpha.ahk` | v2.1-alpha.30 | Experimental. New features land here first and are promoted to the main file once the test gates pass. Same API, may carry unfinished work. |
+| `DarkModeModular_Classic.ahk` | v2.1-alpha.17 – .28 | Frozen older generation for interpreters before alpha.30 (hand-rolled struct offsets, smaller control coverage). |
+| `DarkModeModular_Fable.ahk` | v2.1-alpha.30 | Compatibility shim that includes the main file, so existing `#Include DarkModeModular_Fable.ahk` lines keep working. |
 
-### What the Fable revision adds
+Never include two of these in one script — they declare the same classes.
 
-- **Coverage** — DateTime, Hotkey, Tab/Tab2/Tab3, TreeView checkboxes, dark tooltips (`DarkToolTip`), dark Edit caret, generalized scrollbars.
-- **Correctness** — `WM_SETTEXT` keeps Button/GroupBox captions in sync; native `AddButton`/`AddEdit`/... shorthands route through dark styling; menu-bar tooltips actually display; `MIM_BACKGROUND` uses the cached brush (no leak); radios expose their text to UIA.
-- **Architecture** — handler registry (`DarkGui.Register`) so user control classes plug in without editing `Add()`; `DarkGui.Attach()` retrofits an existing plain `Gui`; subclassing via comctl32 `SetWindowSubclass`.
-- **Theming** — `DarkTheme.SetPalette()` with presets (Default/OLED/Slate/Blue/Light) plus `OnThemeChanged` callbacks; palette swaps re-sync DWM title-bar colors and `Gui.BackColor` per window; `DarkTheme.FollowSystem()` tracks the OS light/dark setting; per-monitor DPI scaling via `GetDpiForWindow` with `WM_DPICHANGED` handling and a `DarkGui.OnDpiChanged()` hook.
+## What the main build does
 
-Public API: `DarkGui`, `DarkTheme`, `DarkTitleBar`, `DarkMenu`, `DarkMenuBar`.
+- **Coverage** — Button (icon, split, command-link, toggle and flat variants), Edit (dark caret, cue banners), ComboBox and DDL, ListBox, ListView (custom-draw rows, groups, header, checkboxes), TreeView (checkboxes), Tab/Tab2/Tab3, GroupBox, CheckBox and Radio, Slider, Progress (states and marquee), UpDown, DateTime, MonthCal, Hotkey, Link, StatusBar, menu bar and popup menus, tooltips, scrollbars, and opt-in dark MsgBox/InputBox via `DarkDialogs.Install()`.
+- **Architecture** — one handler registry (`DarkGui.Handlers`). `DarkGui.Register(type, handler)` plugs user control classes in without editing `Add()`. Subclassing goes through comctl32 `SetWindowSubclass` and reclaims thunks and owner state on `WM_NCDESTROY`; parent-side messages (`WM_CTLCOLOR*`, `WM_NOTIFY`, `WM_DRAWITEM`) dispatch through an hwnd-keyed child registry.
+- **Options** — `+Accent`, `+Flat`, `+Toggle[=on]`, `+Icon=<spec> [+Align=..]` on buttons; `c<X>` / `Background<X>` accept a hex value, an AHK colour name or a `DarkTheme.Colors` key that follows palette swaps.
+- **Theming** — `DarkTheme.SetPalette()` with presets (Default, OLED, Slate, Blue, Light) and `OnThemeChanged` callbacks. Palette swaps re-sync DWM title-bar colors and `Gui.BackColor` per window. `DarkTheme.FollowSystem()` tracks the OS light/dark setting. Per-monitor DPI via `GetDpiForWindow` and `WM_DPICHANGED` with a `DarkGui.OnDpiChanged()` hook. High-contrast mode stands the theme down automatically.
+- **Typed-Struct foundation** — Win32 structs are declared with the alpha.30 `Struct` keyword and class-ref properties (`IntPtr`, `Int32`, `UInt32`, ...); no hand-rolled offset math.
+
+Public API: `DarkGui`, `DarkTheme`, `DarkTitleBar`, `DarkMenu`, `DarkMenuBar`, `DarkScrollbar`, `DarkToolTip`, `DarkDialogs`.
+
+## Showcase
+
+The library has no auto-execute section. Run `Showcase.ahk` for a window that exercises every supported control, the button variants, the palette presets (View menu) and the dark dialogs.
 
 ## Built with this system
 
-Real GUIs from the wider script collection, each just `#Include`-ing one of the `DarkModeModular*` files:
+Real GUIs from the wider script collection, each just `#Include`-ing `DarkModeModular.ahk`:
 
 Teleprompter — WPM-paced reading with strike-through for read words and live font/speed controls:
 
@@ -60,34 +75,28 @@ Search bar with an embedded flat button inside the Edit's border and a live-filt
 
 ## Legacy experiments
 
-`_Dark.ahk`, `_Dark2.ahk`, `__Darkest.ahk`, `___Darkest.ahk`, `Attempt_500.ahk`, `Draft.ahk`, and the `DarkGUI/` folder are earlier iterations kept for reference. They predate the modular rewrite — use the `DarkModeModular*` files instead.
+`_Dark.ahk`, `_Dark2.ahk`, `__Darkest.ahk`, `___Darkest.ahk`, `Attempt_500.ahk`, `Draft.ahk`, and the `DarkGUI/` folder are earlier iterations kept for reference. They predate the modular rewrite — use `DarkModeModular.ahk` instead.
 
 ## Screenshots
 
-Each library ships with a built-in showcase — run the file directly (instead of `#Include`-ing it) to open a window exercising every supported control.
-
-### Classic (`DarkModeModular.ahk`)
-
-![Classic showcase](screenshots/DarkModeModular_Classic.png)
-
-### Alpha port (`DarkModeModular_Alpha.ahk`)
-
-![Alpha showcase](screenshots/DarkModeModular_Alpha.png)
-
-### Fable revision (`DarkModeModular_Fable.ahk`)
+### Main (`DarkModeModular.ahk`)
 
 Default palette, with DateTime, Hotkey, Tab3, checkbox TreeView, and MonthCal coverage:
 
-![Fable showcase, Default palette](screenshots/DarkModeModular_Fable_Default.png)
+![Main showcase, Default palette](screenshots/DarkModeModular_Default.png)
 
 Live palette swap via `DarkTheme.SetPalette()` — OLED and Slate presets applied from the View menu:
 
-![Fable showcase, OLED preset](screenshots/DarkModeModular_Fable_OLED.png)
+![Main showcase, OLED preset](screenshots/DarkModeModular_OLED.png)
 
-![Fable showcase, Slate preset](screenshots/DarkModeModular_Fable_Slate.png)
+![Main showcase, Slate preset](screenshots/DarkModeModular_Slate.png)
 
 The Blue preset carries the accent hue into every surface — background, controls, borders, scrollbars — for windows that should read as blue rather than gray:
 
-![Fable showcase, Blue preset](screenshots/DarkModeModular_Fable_Blue.png)
+![Main showcase, Blue preset](screenshots/DarkModeModular_Blue.png)
+
+### Classic (`DarkModeModular_Classic.ahk`)
+
+![Classic showcase](screenshots/DarkModeModular_Classic.png)
 
 Screenshots are produced with `tools/compose.ps1`, which renders the target window off-screen via `PrintWindow`, then composites it onto the Windows 11 Bloom wallpaper with rounded corners and a drop shadow — no clean desktop required. `tools/capture.ps1` is the simpler live-screen variant.
