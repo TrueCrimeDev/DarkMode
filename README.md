@@ -45,6 +45,40 @@ Public API: `DarkGui`, `DarkTheme`, `DarkTitleBar`, `DarkMenu`, `DarkMenuBar`, `
 
 The library has no auto-execute section. Run `Showcase.ahk` for a window that exercises every supported control, the button variants, the palette presets (View menu) and the dark dialogs.
 
+## Examples
+
+Each file in `examples/` is a small, self-contained script that shows one part of the library. Run any of them directly.
+
+| Example | Shows |
+|---|---|
+| `01_HelloDark.ahk` | The smallest dark window: `DarkGui()` in place of `Gui()`, a cue banner, an accent button, a status bar. |
+| `02_GlobalOneLiner.ahk` | `DarkGui.Global()`: a plain `Gui()`, a `class extends Gui`, and dark `MsgBox`/`InputBox`, none of which mention dark mode. |
+| `03_AttachExisting.ahk` | `DarkGui.Attach(gui)` on a window built first, controls added after Attach, and `Detach` to hand it back. |
+| `04_Palettes.ahk` | The five presets, a custom `SetPalette`, `FollowSystem`, `OnThemeChanged`, `DefineColor`, and palette keys in options (`cAccent`). |
+| `05_Buttons.ahk` | Every button style, once through the option grammar (`+Accent`, `+Flat`, `+Toggle=on`, `+Icon=`) and once through the factories. |
+| `06_Lists.ahk` | ListView with checkboxes and sortable columns, TreeView with checkboxes, a ListBox with a `DarkScrollbar` rail, and a live filter box. |
+| `07_SettingsForm.ahk` | A three-page `Tab3` form with every input control, disabled-state colours, and a Progress bar cycling through its states. |
+| `08_MenuBarToolbar.ahk` | `DarkMenuBar` with popup menus and a toolbar row, `WM_COMMAND` routing, a multi-part status bar, and `DarkToolTip.Show`. |
+| `09_CustomControl.ahk` | `DarkGui.Register` with a handler for a control the library does not know (`SysIPAddress32`), painted with the palette. |
+
+![Hello, dark](screenshots/Example_01_HelloDark.png)
+
+![Global one-liner](screenshots/Example_02_GlobalOneLiner.png)
+
+![Attach an existing Gui](screenshots/Example_03_AttachExisting.png)
+
+![Palettes](screenshots/Example_04_Palettes.png)
+
+![Buttons](screenshots/Example_05_Buttons.png)
+
+![Lists](screenshots/Example_06_Lists.png)
+
+![Settings form](screenshots/Example_07_SettingsForm.png)
+
+![Menu bar and toolbar](screenshots/Example_08_MenuBarToolbar.png)
+
+![Custom control handler](screenshots/Example_09_CustomControl.png)
+
 ## Built with this system
 
 Real GUIs from the wider script collection, each just `#Include`-ing `DarkModeModular.ahk`:
