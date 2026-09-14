@@ -43,7 +43,6 @@ myGui.Show()
 | `DarkModeModular.ahk` | v2.1-alpha.30 | **Main. Use this.** The polished, gated build. |
 | `DarkModeModular_Alpha.ahk` | v2.1-alpha.30 | Experimental. New features land here first and are promoted to the main file once the test gates pass. Same API, may carry unfinished work. |
 | `DarkModeModular_Classic.ahk` | v2.1-alpha.17 to .28 | Frozen older generation for interpreters before alpha.30 (hand-rolled struct offsets, smaller control coverage). |
-| `DarkModeModular_Fable.ahk` | v2.1-alpha.30 | Compatibility shim that includes the main file, so existing `#Include DarkModeModular_Fable.ahk` lines keep working. |
 
 Never include two of these in one script. They declare the same classes.
 
